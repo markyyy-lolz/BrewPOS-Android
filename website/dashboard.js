@@ -1,5 +1,5 @@
 "use strict";
-// BrewPOS browser client: only public publishable key, never service_role/secret key.
+// BrewPOS browser client: only a public publishable key. No privileged credentials here.
 const URLBASE="https://rfxzbuocxersgbshczbj.supabase.co";
 const PUBLIC_KEY="sb_publishable_CR-CJKna_rcjQi7gg1CZGQ__DnXI6Lb";
 const $=id=>document.getElementById(id);
