@@ -33,3 +33,10 @@ test('oversized payload is blocked',async()=>{
  const r=await onRequestPost({request:request({...base,message:'x'.repeat(13000)}),env});assert.equal(r.status,413);
 });
 test('GET request is not accepted',()=>{assert.equal(onRequestGet().status,405)});
+
+test('new plan selections are valid inquiry categories',async()=>{
+  for (const plan of ['Offline Basic — monthly','Offline Basic — lifetime','Offline Premium — planned']) {
+    const r=await onRequestPost({request:request({...base,plan}),env:{}});
+    assert.equal(r.status,503, 'Valid plan should reach email configuration check: '+plan);
+  }
+});

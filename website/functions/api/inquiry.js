@@ -2,7 +2,8 @@
 const LIMIT_BYTES = 12_000;
 const CATEGORIES = new Set([
   'Free trial inquiry', 'Monthly plan', 'Lifetime license',
-  'Hybrid Cloud availability', 'Hardware / printer compatibility', 'Other inquiry',
+  'Offline Basic — monthly', 'Offline Basic — lifetime',
+  'Offline Premium — planned', 'Hybrid Cloud availability', 'Hardware / printer compatibility', 'Other inquiry',
 ]);
 const trimField = (data, field, max = 250) => {
   if (typeof data[field] !== 'string') throw new Error(`Invalid ${field}`);
