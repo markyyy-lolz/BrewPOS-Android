@@ -65,6 +65,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { MaterialTheme(colorScheme = CoffeeTheme) { LicensedBrewPos() } }
+        BrewCloud.schedule(applicationContext)
     }
 }
 
@@ -276,6 +277,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         cart.clear()
         refresh()
         receipt = saved
+        BrewCloud.queueNow(context)
         if (autoPrintBoth) thermalPrint(saved, "both", automatic = true)
         else alert("Sale completed. Print both slips from the receipt screen.")
     }
@@ -302,7 +304,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
             if (!isWide) NavigationBar(containerColor = Color.White, tonalElevation = 1.dp) {
                 listOf(Triple("POS", "☕", "Sell"), Triple("Orders", "🧾", "Orders"),
                     Triple("Menu", "📋", "Menu"), Triple("Reports", "📊", "Reports"),
-                    Triple("Settings", "⚙", "Settings")).forEach { (key, symbol, label) ->
+                    Triple("Settings", "⚙", "Settings"), Triple("Cloud", "☁", "Cloud")).forEach { (key, symbol, label) ->
                     NavigationBarItem(selected = tab == key, onClick = { tab = key; cartOnPhone = false },
                         icon = { Text(symbol, fontSize = 20.sp) }, label = { Text(label, fontSize = 10.sp) })
                 }
@@ -360,6 +362,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                     runCatching { db.updateStatus(sale.id, next); refresh() }
                         .onFailure { alert(it.message ?: "Unable to update status") }
                 })
+                "Cloud" -> CloudScreen(context, db)
                 "Menu" -> MenuView(allProducts, onAdd = { addingProduct = true }, onEdit = { editing = it }, onRestore = { p ->
                     runCatching { db.saveProduct(p.copy(active = true)); refresh() }
                         .onSuccess { alert("${p.name} restored") }

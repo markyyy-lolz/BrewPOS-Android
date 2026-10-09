@@ -47,7 +47,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: BrewPOS-v2.0-ui-debug-APK
+          name: BrewPOS-v2.0-hybrid-alpha-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -57,5 +57,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v2.0.0-ui-foundation-preview >/dev/null 2>&1 || gh release create v2.0.0-ui-foundation-preview --prerelease --title "BrewPOS v2.0 UI Foundation (DEBUG)" --notes "Modern dashboard, tablet sidebar, and redesigned activation. Offline UI preview only, no Supabase Hybrid sync yet. Hardware testing required."
-          gh release upload v2.0.0-ui-foundation-preview app/build/outputs/apk/debug/app-debug.apk --clobber
+          gh release view v2.0.0-hybrid-alpha >/dev/null 2>&1 || gh release create v2.0.0-hybrid-alpha --prerelease --title "BrewPOS v2.0 Hybrid Alpha (DEBUG)" --notes "Cloud sync endpoint integration, encrypted staff session, local outbox and retry support. Requires provisioned staff access and tablet registration. DEBUG alpha only; no production hardware/backup validation."
+          gh release upload v2.0.0-hybrid-alpha app/build/outputs/apk/debug/app-debug.apk --clobber

@@ -11,8 +11,8 @@ android {
         applicationId = "com.brewpos.cafe"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "2.0.0-ui-foundation-preview"
+        versionCode = 5
+        versionName = "2.0.0-hybrid-alpha"
     }
     buildFeatures { compose = true }
     compileOptions {
@@ -32,6 +32,7 @@ dependencies {
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("androidx.work:work-runtime-ktx:2.10.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
 }

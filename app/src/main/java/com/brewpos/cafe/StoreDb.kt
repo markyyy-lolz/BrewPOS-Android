@@ -80,6 +80,8 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
         db.execSQL("CREATE INDEX IF NOT EXISTS sync_outbox_pending_idx ON sync_outbox(state,created_at)")
     }
 
+    fun installationId(): String = terminalId
+
     fun pendingSyncCount(): Int {
         readableDatabase.rawQuery("SELECT COUNT(*) FROM sync_outbox WHERE state='pending'", null).use { c ->
             return if (c.moveToFirst()) c.getInt(0) else 0

@@ -31,7 +31,7 @@ fun BrewSidebar(selected: String, onSelect: (String) -> Unit) {
         Text("BREWPOS", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black)
         Spacer(Modifier.height(18.dp))
         listOf("Dashboard" to "▦", "POS" to "☕", "Orders" to "▤",
-            "Menu" to "☰", "Reports" to "▥", "Settings" to "⚙").forEach { (key, icon) ->
+            "Menu" to "☰", "Reports" to "▥", "Cloud" to "☁", "Settings" to "⚙").forEach { (key, icon) ->
             val chosen = selected == key
             Column(
                 Modifier.fillMaxWidth()
