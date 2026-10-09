@@ -418,7 +418,10 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         })
     }
     if (addingProduct || editing != null) {
-        ProductEditor(editing, onClose = { addingProduct = false; editing = null }, onSave = { p ->
+        ProductEditor(
+            editing, businessType,
+            onClose = { addingProduct = false; editing = null },
+            onSave = { p ->
             runCatching { db.saveProduct(p); refresh() }
                 .onSuccess { addingProduct = false; editing = null; alert("Menu updated") }
                 .onFailure { alert(it.message ?: "Unable to save product") }
@@ -518,7 +521,7 @@ private fun ProductCatalog(
 
 @Composable
 private fun CustomizeDialog(product: Product, existingCount: Int, onClose: () -> Unit, onAdd: (CartLine) -> Unit) {
-    val drink = product.category in listOf("Coffee", "Non-Coffee", "Tea")
+    val drink = product.category in listOf("Coffee", "Non-Coffee", "Tea", "Milk Tea", "Fruit Tea")
     var size by remember(product.id) { mutableStateOf(if (drink) "Regular" else "One size") }
     val extras = remember(product.id) { mutableStateListOf<Extra>() }
     var qty by remember(product.id) { mutableIntStateOf(1) }
@@ -746,11 +749,19 @@ private fun MenuView(products: List<Product>, onAdd: () -> Unit, onEdit: (Produc
 }
 
 @Composable
-private fun ProductEditor(product: Product?, onClose: () -> Unit, onSave: (Product) -> Unit) {
+private fun ProductEditor(
+    product: Product?,
+    businessType: String,
+    onClose: () -> Unit,
+    onSave: (Product) -> Unit
+) {
     var name by remember(product?.id) { mutableStateOf(product?.name ?: "") }
     var price by remember(product?.id) { mutableStateOf(product?.priceCents?.let { "%.2f".format(java.util.Locale.US, it / 100.0) } ?: "") }
     var stock by remember(product?.id) { mutableStateOf(product?.stock?.toString() ?: "0") }
-    var category by remember(product?.id) { mutableStateOf(product?.category ?: "Coffee") }
+    val suggestions = remember(businessType) { BrewBusinessProfile.suggestedCategories(businessType) }
+    var category by remember(product?.id, businessType) {
+        mutableStateOf(product?.category ?: suggestions.first())
+    }
     var icon by remember(product?.id) { mutableStateOf(product?.icon ?: "☕") }
     var trackStock by remember(product?.id) { mutableStateOf(product?.trackStock ?: true) }
     val priceCents = parseMoney(price)
@@ -764,11 +775,23 @@ private fun ProductEditor(product: Product?, onClose: () -> Unit, onSave: (Produ
                 OutlinedTextField(stock, { stock = it }, label = { Text("Stock (units)") }, modifier = Modifier.fillMaxWidth(),
                     singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 Text("Category", fontWeight = FontWeight.Bold)
-                Column {
-                    listOf(listOf("Coffee", "Non-Coffee"), listOf("Tea", "Pastries")).forEach { group ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            group.forEach { choice -> FilterChip(selected = category == choice, onClick = { category = choice }, label = { Text(choice) }) }
-                        }
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = { Text("Custom menu category") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    suggestions.forEach { choice ->
+                        FilterChip(
+                            selected = category == choice,
+                            onClick = { category = choice },
+                            label = { Text(choice) }
+                        )
                     }
                 }
                 OutlinedTextField(icon, { icon = it }, label = { Text("Emoji icon") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -780,10 +803,10 @@ private fun ProductEditor(product: Product?, onClose: () -> Unit, onSave: (Produ
             }
         }, confirmButton = {
             Button(onClick = {
-                onSave(Product(id = product?.id ?: 0L, name = name.trim(), category = category,
+                onSave(Product(id = product?.id ?: 0L, name = name.trim(), category = category.trim(),
                     priceCents = priceCents ?: 0, stock = stockCount ?: 0,
                     trackStock = trackStock, active = true, icon = icon.ifBlank { "☕" }.take(4)))
-            }, enabled = name.isNotBlank() && priceCents != null && stockCount != null && stockCount >= 0) { Text("Save") }
+            }, enabled = name.isNotBlank() && category.isNotBlank() && priceCents != null && stockCount != null && stockCount >= 0) { Text("Save") }
         }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
 }
 
