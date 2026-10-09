@@ -1,29 +1,62 @@
-# BrewPOS Website — GitHub Pages
+# BrewPOS Website — Production Source
 
-BrewPOS website files live in `website/` and are deployed by GitHub Actions through `.github/workflows/deploy-website-pages.yml`. **GitHub Pages is the website host. Supabase is backend only** (authentication, database, authenticated sync API).
+**BrewPOS by Azurate Software Solutions**  
+Static responsive marketing site with optional Cloudflare Pages Functions inquiries. The source is deployable; it is **not currently verified live** at a public address.
 
-## Publish once (repo owner action)
+## Included
 
-1. Open **https://github.com/markyyy-lolz/BrewPOS-Android/settings/pages**
-2. Under **Build and deployment → Source**, choose **GitHub Actions**.
-3. Check **Actions** and wait for the **Deploy BrewPOS Website to GitHub Pages** job to pass. You can also run it with **Run workflow** from the Actions tab.
-4. The expected default project site is `https://markyyy-lolz.github.io/BrewPOS-Android/` once GitHub marks it published. Do **not** assume it is live before the Pages deployment succeeds.
+- Fully designed branded home page with responsive desktop/tablet/mobile navigation.
+- Real navigation and functional links, Trial/Monthly/Lifetime license inquiry options, detailed FAQ.
+- Accessible inquiry form with browser field validation and a server-side Cloudflare Pages Function.
+- Transactional emails through Resend when configured (`RESEND_API_KEY`, `BREWPOS_TO_EMAIL`, `BREWPOS_FROM_EMAIL`). A direct email draft fallback is shown if the service is unavailable.
+- Honeypot, input limits, origin check, optional Cloudflare Turnstile bot check.
+- Privacy Policy, Terms, 404 page, restrictive response headers, optimized vector images, social preview.
+- No invented prices, statistics, customer endorsements, or unverified product functionality.
+- Node.js automated API tests.
 
-**Important:** The Android repository is PRIVATE. GitHub Free supports GitHub Pages for **public** repos only. For private repositories, GitHub Pro/Team/Enterprise is required. Do not make this Android app source public merely to host the marketing website. On GitHub Free, create a separate PUBLIC `BrewPOS-Website` repository containing ONLY the website files, and deploy Pages from that repository. No Android source or owner signing material should be copied there.
+## Build/test
 
-## About the pages
-- `index.html`: BrewPOS marketing landing page (public).
-- `dashboard.html` + `dashboard.js`: merchant sign-in + real read-only Supabase sales scoped through RLS, no persisted browser session.
-- `portal.html`: clearly labeled sample/demo dashboard.
-- `styles.css`, `site.js`: static assets.
+Node 22 recommended. No frontend bundler or production runtime dependencies required.
 
-Supabase's PUBLIC publishable API key is intentionally embedded in dashboard.js; never add a secret/service-role key. Cloud sales only appear when there are authenticated, confirmed staff accounts with authorized organizations. No public anonymous owner provisioning.
+```sh
+npm run check
+python -m http.server -d public 8080
+```
 
-## Updating
-Push website changes to `main`; GitHub Actions publishes `website/` as a Pages artifact. The build never uploads the private Android project. Relative asset URLs support the `/BrewPOS-Android/` Pages project subpath. GitHub Pages ignores Cloudflare's `_headers` file; HTML carries a limited CSP meta tag where supported.
+The local Python webserver previews **static pages only**, so inquiry `/api/inquiry` sends no email. Use Cloudflare Pages to execute the Function.
 
-## Developer preview
-`cd website && python -m http.server 8080`, then open http://localhost:8080.
+## Deploy to Cloudflare Pages
 
-## Status
-A GitHub Actions workflow does not itself guarantee Pages has been enabled or that the account's plan supports private-repo Pages. Check the deployment job and Settings → Pages before sharing the URL with customers.
+1. Push the source files (including the top-level `functions/` and `public/` folders) to a GitHub repository. The project may be placed under `website/` inside BrewPOS Android's existing repository; select **Root directory: `website`** in Pages.
+2. Cloudflare Dashboard → Workers & Pages → Create → Pages → Connect Git. Select repository.
+3. **Framework preset:** None; **Build command:** leave empty; **Build output directory:** `public` (project root `website` if applicable).
+4. Set the following Cloudflare Pages project environment variables:
+
+| Variable | Type | Value |
+| --- | --- | --- |
+| `RESEND_API_KEY` | Secret | Secret API key from Resend, for server-side email delivery |
+| `BREWPOS_FROM_EMAIL` | Secret or text | Sender verified with Resend e.g. `BrewPOS <hello@your-verified-domain.ph>` |
+| `BREWPOS_TO_EMAIL` | Secret or text | `rem164791@gmail.com` (confirm it as business mailbox before launch) |
+| `TURNSTILE_SECRET` | Secret (optional, recommended) | Cloudflare Turnstile secret key |
+
+5. If Turnstile is enabled, set `TURNSTILE_SITE_KEY` in `public/script.js` to the corresponding public site key. Both keys must match the Cloudflare hostname configuration.
+6. Add abuse controls (Cloudflare WAF/rate limiting rules) for `/api/inquiry`, and validate that the email arrives before accepting real leads.
+7. Publish. Cloudflare assigns a `*.pages.dev` domain; attach your own domain through Pages → Custom domains.
+8. Update the public site URL for search engine metadata after the domain is known.
+
+**NEVER paste `RESEND_API_KEY` or `TURNSTILE_SECRET` into `script.js`, HTML, GitHub, screenshots or public issues.** Cloudflare dashboard's secure secrets are the intended storage location.
+
+## Product status accuracy
+
+The site describes the shipped Android v1.2 **activation preview** as offline-first with manual payment labels and local data. The website uses **illustrative artwork** rather than claiming the shipped Android UI looks identical. Supabase hybrid synchronization, owner dashboard, safe multi-tablet inventory reconciliation, and commercial production invoicing are still in development. No BIR accreditation is claimed.
+
+Do not distribute debug APKs as commercial software. A full release requires production signing, real thermal printer tests, sync tests, backup/restore tests, and relevant legal compliance checks.
+
+## Folder structure
+
+- `public/` — deployed static HTML, styles, JS, SVG, privacy/terms, security headers
+- `functions/api/inquiry.js` — Pages Functions POST email endpoint
+- `tests/` — automated API endpoint tests
+- `wrangler.toml` — Cloudflare Pages project config
+
+© Azurate Software Solutions. All rights reserved.
