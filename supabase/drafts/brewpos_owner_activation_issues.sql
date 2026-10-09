@@ -22,7 +22,11 @@ create index if not exists brew_activation_issues_issued_by_date_idx
 create index if not exists brew_activation_issues_device_idx
  on public.brew_activation_issues (android_device_id,issued_at desc);
 alter table public.brew_activation_issues enable row level security;
-revoke all on public.brew_activation_issues from public, anon, authenticated;
+revoke all on public.brew_activation_issues from public, anon, authenticated, service_role;
 grant select, insert on public.brew_activation_issues to service_role;
+-- An explicit never-true authenticated policy documents the deny-by-default model.
+drop policy if exists brew_activation_issues_no_merchant_access on public.brew_activation_issues;
+create policy brew_activation_issues_no_merchant_access on public.brew_activation_issues
+ for select to authenticated using (false);
 comment on table public.brew_activation_issues is
  'Owner-issued BP1 activation audit records. Full activation tokens and ECDSA secret keys are never stored. No direct merchant/anonymous access.';
