@@ -1,0 +1,2 @@
+BrewPOS v1.1 source-import ready
+SHA256 d9e348d2a1094e0222dec6106f3ad732790e7a5cc8ec57bbedd7c47dedb8d1d8
