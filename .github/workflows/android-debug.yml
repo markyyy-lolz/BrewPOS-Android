@@ -47,15 +47,11 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: BrewPOS-v2.0-hybrid-alpha-debug-APK
+          name: BrewPOS-v2.1.0-ui-rc1-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish activation preview prerelease (DEBUG APK only)
-        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release view v2.0.0-hybrid-alpha >/dev/null 2>&1 || gh release create v2.0.0-hybrid-alpha --prerelease --title "BrewPOS v2.0 Hybrid Alpha (DEBUG)" --notes "Cloud sync endpoint integration, encrypted staff session, local outbox and retry support. Requires provisioned staff access and tablet registration. DEBUG alpha only; no production hardware/backup validation."
-          gh release upload v2.0.0-hybrid-alpha app/build/outputs/apk/debug/app-debug.apk --clobber
+      # Development PRs produce GitHub Actions artifacts only.
+      # No automatic release/tag overwrite: production signing and two-tablet
+      # hardware acceptance tests must be completed before publication.
