@@ -1,3 +1,4 @@
+import { signBP1 } from "./license-signing.mjs";
 // BrewPOS Azurate owner-only API: no secret ever reaches website JavaScript.
 // SUPABASE_SERVICE_ROLE_KEY is provided by Supabase runtime; owner signing key
 // must be securely configured as BREWPOS_LICENSE_PRIVATE_KEY_PKCS8_B64.
@@ -31,10 +32,6 @@ const answer = (req: Request, status: number, payload: unknown) =>
   new Response(JSON.stringify(payload), { status, headers: cors(req) });
 const uuid = (x: unknown): x is string =>
   typeof x === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
-const b64bytes = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
-function b64url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-}
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
 }
@@ -76,36 +73,6 @@ function normalizeCustomer(value: unknown): string {
   }
   return s;
 }
-function encodeAsn1Integer(src: Uint8Array): Uint8Array {
-  let start = 0;
-  while (start < src.length - 1 && src[start] === 0) start++;
-  const core = src.subarray(start);
-  const prefix = core[0] & 0x80 ? [0] : [];
-  return new Uint8Array([0x02, core.length + prefix.length, ...prefix, ...core]);
-}
-// WebCrypto P-256 ECDSA signs in IEEE-P1363 (r||s) format, while Android's
-// SHA256withECDSA verifier requires ASN.1 DER (SEQUENCE(INTEGER r,INTEGER s)).
-function p1363ToDer(raw: Uint8Array): Uint8Array {
-  if (raw.length !== 64) throw Error("Unexpected ECDSA signature format");
-  const r = encodeAsn1Integer(raw.subarray(0,32));
-  const s = encodeAsn1Integer(raw.subarray(32,64));
-  return new Uint8Array([0x30, r.length + s.length, ...r, ...s]);
-}
-async function privateKey(): Promise<CryptoKey> {
-  if (!signingKeyB64) throw Error("Owner signing key is not configured");
-  const key = await crypto.subtle.importKey("pkcs8", b64bytes(signingKeyB64), {
-    name:"ECDSA", namedCurve:"P-256"
-  }, true, ["sign"]);
-  const publicRaw = await crypto.subtle.exportKey("jwk", key);
-  if (!publicRaw.x || !publicRaw.y) throw Error("Missing public coordinates in private key");
-  const spki = await crypto.subtle.importKey("jwk", {
-    kty:"EC",crv:"P-256",x:publicRaw.x,y:publicRaw.y,
-    ext:true,key_ops:["verify"]
-  },{name:"ECDSA",namedCurve:"P-256"},true,["verify"]);
-  const out = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.exportKey("spki", spki))));
-  if (out !== expectedSpki) throw Error("Signing key does not match shipped Android public key");
-  return key;
-}
 async function issueLicense(input: Record<string, unknown>, userId: string) {
   const device = String(input.android_device_id || "").trim().toLowerCase();
   if (!/^[0-9a-f]{16}$/.test(device)) throw Error("Android Device ID must contain 16 hexadecimal characters");
@@ -116,14 +83,9 @@ async function issueLicense(input: Record<string, unknown>, userId: string) {
   const now = Math.floor(Date.now()/1000);
   const expires = days ? now + days*86400 : 0;
   const id = crypto.randomUUID();
-  const rawText = ["1",device,plan,String(expires),id,customer].join("|");
-  const raw = new TextEncoder().encode(rawText);
-  // Never record/return a code unless private-key authenticity is validated.
-  const key = await privateKey();
-  const sig = new Uint8Array(await crypto.subtle.sign(
-    {name:"ECDSA",hash:"SHA-256"},key,raw
-  ));
-  const code = "BP1." + b64url(raw) + "." + b64url(p1363ToDer(sig));
+  // The ECDSA signature must be valid in Android's SHA256withECDSA DER verifier.
+  const { code } = await signBP1(signingKeyB64, expectedSpki,
+    ["1",device,plan,String(expires),id,customer]);
   const sha = hex(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(code))));
   const payload = {
     id,
