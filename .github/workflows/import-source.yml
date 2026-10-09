@@ -2,7 +2,7 @@ name: Import BrewPOS Source
 on:
   push:
     branches: [main]
-    paths: ['BrewPOS_GitHub_Ready_v1.1.zip']
+    paths: ['BrewPOS-source-v1.1.tar.xz']
   workflow_dispatch:
 
 permissions:
@@ -18,8 +18,8 @@ jobs:
           persist-credentials: true
       - name: Extract BrewPOS source
         run: |
-          test -s BrewPOS_GitHub_Ready_v1.1.zip
-          unzip -oq BrewPOS_GitHub_Ready_v1.1.zip -d .
+          test -s BrewPOS-source-v1.1.tar.xz
+          tar -xJf BrewPOS-source-v1.1.tar.xz -C .
           git add -A
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Import BrewPOS v1.1 Android source' || exit 0
           git push origin HEAD:main
