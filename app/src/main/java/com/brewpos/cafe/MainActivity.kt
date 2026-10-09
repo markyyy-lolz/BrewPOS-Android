@@ -234,9 +234,9 @@ private fun BrewPosApp() {
                     runCatching { db.saveProduct(p.copy(active = true)); refresh() }
                         .onSuccess { alert("${p.name} restored") }
                         .onFailure { alert(it.message ?: "Unable to restore") }
-                }, onArchive = {
-                    runCatching { db.archiveProduct(it); refresh() }
-                        .onSuccess { alert("${it.name} archived. Past sales are preserved.") }
+                }, onArchive = { p ->
+                    runCatching { db.archiveProduct(p); refresh() }
+                        .onSuccess { alert("${p.name} archived. Past sales are preserved.") }
                         .onFailure { e -> alert(e.message ?: "Unable to archive") }
                 })
                 "Reports" -> ReportsView(db, allSales)
