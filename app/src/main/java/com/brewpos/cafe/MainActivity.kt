@@ -4,6 +4,11 @@ import android.Manifest
 import android.content.Context
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.content.ClipData
+import android.content.ClipboardManager
+import androidx.compose.foundation.text.selection.SelectionContainer
+import kotlinx.coroutines.delay
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -58,12 +63,91 @@ private fun todayStart(): Long = Calendar.getInstance().apply {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme(colorScheme = CoffeeTheme) { BrewPosApp() } }
+        setContent { MaterialTheme(colorScheme = CoffeeTheme) { LicensedBrewPos() } }
+    }
+}
+
+
+@Composable
+private fun LicensedBrewPos() {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("brewpos_activation", Context.MODE_PRIVATE) }
+    val deviceId = remember { Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown-device" }
+    var activeKey by remember { mutableStateOf(prefs.getString("signed_license", "") ?: "") }
+    var showRenewal by remember { mutableStateOf(false) }
+    var tick by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) { delay(30_000); tick = System.currentTimeMillis() }
+    }
+    val status = LicenseManager.evaluate(activeKey, deviceId, tick, prefs.getLong("last_checked", 0))
+    LaunchedEffect(tick, activeKey) {
+        if (status.active && tick > prefs.getLong("last_checked", 0))
+            prefs.edit().putLong("last_checked", tick).apply()
+    }
+    fun activate(code: String): String? {
+        val now = System.currentTimeMillis()
+        val candidate = LicenseManager.evaluate(code.trim(), deviceId, now, prefs.getLong("last_checked", 0))
+        if (!candidate.active) return candidate.message
+        prefs.edit().putString("signed_license", code.trim()).putLong("last_checked", now).apply()
+        activeKey = code.trim()
+        tick = now
+        showRenewal = false
+        return null
+    }
+    fun canCheckout(): Boolean {
+        val now = System.currentTimeMillis()
+        val checked = LicenseManager.evaluate(activeKey, deviceId, now, prefs.getLong("last_checked", 0))
+        if (checked.active && now > prefs.getLong("last_checked", 0)) prefs.edit().putLong("last_checked", now).apply()
+        return checked.active
+    }
+    if (!status.active || showRenewal) {
+        ActivationScreen(deviceId, status, showRenewal && status.active, onCancel = { showRenewal = false }, onActivate = { code -> activate(code) })
+    } else BrewPosApp(licenseStatus = status, onManageLicense = { showRenewal = true }, canCheckout = { canCheckout() })
+}
+
+@Composable
+private fun ActivationScreen(
+    deviceId: String, current: LicenseManager.Status, canCancel: Boolean,
+    onCancel: () -> Unit, onActivate: (String) -> String?
+) {
+    val context = LocalContext.current
+    var input by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+    Surface(color = Cream, modifier = Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("☕ BrewPOS Activation", color = Coffee, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(10.dp))
+            Text("Azurate Software Solutions", color = Cocoa)
+            Spacer(Modifier.height(18.dp))
+            Text(current.message.ifBlank { "Enter your signed activation code." }, color = if(current.grace) Color(0xFF9E681A) else Cocoa)
+            Spacer(Modifier.height(18.dp))
+            Text("DEVICE ID", fontWeight = FontWeight.Bold)
+            SelectionContainer { Text(deviceId, color = Coffee) }
+            TextButton(onClick = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("BrewPOS Device ID", deviceId))
+            }) { Text("Copy Device ID") }
+            Text("Send this Device ID to Azurate Software Solutions to receive your license.", color = Cocoa)
+            Spacer(Modifier.height(18.dp))
+            OutlinedTextField(value = input, onValueChange = { input = it; error = "" },
+                label = { Text("Activation code") }, minLines = 3, maxLines = 5,
+                modifier = Modifier.fillMaxWidth())
+            if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = { error = onActivate(input) ?: "" }, enabled = input.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                Text("Activate BrewPOS")
+            }
+            if (canCancel) TextButton(onClick = onCancel) { Text("Back to POS") }
+            Spacer(Modifier.height(8.dp))
+            Text("Lifetime = one-time activation. Monthly/Trial = signed expiration date; an additional 72-hour offline grace period applies.",
+                color = Cocoa, fontSize = 12.sp, textAlign = TextAlign.Center)
+        }
     }
 }
 
 @Composable
-private fun BrewPosApp() {
+private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: () -> Unit, canCheckout: () -> Boolean) {
     val context = LocalContext.current
     val db = remember { StoreDb(context.applicationContext) }
     val prefs = remember { context.getSharedPreferences("shop_prefs", Context.MODE_PRIVATE) }
@@ -170,7 +254,9 @@ private fun BrewPosApp() {
                     Text(shopName, color = Cocoa, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Surface(color = Color.White, shape = RoundedCornerShape(22.dp)) {
-                    Text("● Offline-ready", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), color = Leaf, fontSize = 12.sp)
+                    TextButton(onClick = onManageLicense) {
+                        Text(if (licenseStatus.grace) "⚠ Renew license" else "✓ ${licenseStatus.plan}", color = if (licenseStatus.grace) Color.Red else Leaf, fontSize = 11.sp)
+                    }
                 }
             }
         },
@@ -195,7 +281,8 @@ private fun BrewPosApp() {
                                 val discount = parseMoney(discountText)
                                 val tendered = if (method == "Cash") parseMoney(tenderText) else 0
                                 if (discount == null || (method == "Cash" && tendered == null)) alert("Enter valid payment amounts")
-                                else runCatching { db.checkout(cart.toList(), service, method, discount, tendered ?: 0, note) }
+                                else if (!canCheckout()) alert("License expired. Renew the activation code before checkout.")
+                                    else runCatching { db.checkout(cart.toList(), service, method, discount, tendered ?: 0, note) }
                                     .onSuccess { afterSale(it) }
                                     .onFailure { alert(it.message ?: "Checkout failed") }
                             })
@@ -208,6 +295,7 @@ private fun BrewPosApp() {
                                     val discount = parseMoney(discountText)
                                     val tendered = if (method == "Cash") parseMoney(tenderText) else 0
                                     if (discount == null || (method == "Cash" && tendered == null)) alert("Enter valid payment amounts")
+                                    else if (!canCheckout()) alert("License expired. Renew the activation code before checkout.")
                                     else runCatching { db.checkout(cart.toList(), service, method, discount, tendered ?: 0, note) }
                                         .onSuccess { cartOnPhone = false; afterSale(it) }
                                         .onFailure { alert(it.message ?: "Checkout failed") }

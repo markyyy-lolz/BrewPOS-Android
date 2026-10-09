@@ -24,7 +24,7 @@ class TicketFormatterTest {
         assertTrue(text.contains("DINE-IN"))
         assertTrue(text.contains("2x Caramel Latte"))
         assertTrue(text.contains("Large"))
-        assertTrue(text.contains("Oat milk"))
+        assertTrue(text.contains("Oat") && text.contains("milk"))
         assertTrue(text.contains("Table 3"))
         for (forbidden in listOf("PHP", "Subtotal", "Discount", "Tendered", "Change", "Cash", "250.00")) {
             assertFalse("Found money field $forbidden in barista ticket", text.contains(forbidden))

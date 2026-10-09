@@ -1,4 +1,4 @@
-# ☕ BrewPOS v1.1 — Coffee Shop POS for Android
+# ☕ BrewPOS v1.2 Activation Preview — Coffee Shop POS for Android
 
 **Azurate Software Solutions** · Proprietary Android Studio project · Offline-first · Customer receipt + price-free barista slip via one Bluetooth printer
 
@@ -27,6 +27,12 @@ A local-first Android POS **source project** written in Kotlin and Jetpack Compo
 - Shop name / receipt footer / thermal printer preferences
 - Export all sales **summaries** as CSV (amounts in centavos)
 - Sample drinks and prices (change before actual use)
+
+## Activation preview
+
+The Android app now gates checkout behind an owner-issued signed **Lifetime / Monthly / Trial** activation code tied to its Device ID. Monthly/trial codes have a signed expiry and a 72-hour offline grace period. It does not use an online license server, and the license issuer's private signing key MUST NOT be uploaded to GitHub. See [docs/ACTIVATION_PREVIEW.md](docs/ACTIVATION_PREVIEW.md).
+
+**Not a commercial production release; this is a DEBUG/APK preview for testing only. No Supabase Hybrid sync.**
 
 ## What this release does not do
 
