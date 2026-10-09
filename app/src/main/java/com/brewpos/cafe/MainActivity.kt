@@ -203,7 +203,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     var allSales by remember { mutableStateOf(db.sales()) }
     val cart = remember { mutableStateListOf<CartLine>() }
     var tab by remember { mutableStateOf("Dashboard") }
-    val isWide = LocalConfiguration.current.screenWidthDp >= 1100
+    val isWide = LocalConfiguration.current.screenWidthDp >= 900
     var cartOnPhone by remember { mutableStateOf(false) }
     var customizing by remember { mutableStateOf<Product?>(null) }
     var editing by remember { mutableStateOf<Product?>(null) }
@@ -336,10 +336,10 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 "Dashboard" -> DashboardView(db, allProducts, allSales, businessType,
                     onSell = { tab = "POS" }, onOrders = { tab = "Orders" }, onMenu = { tab = "Menu" })
                 "POS" -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                    if (maxWidth >= 840.dp) {
+                    if (maxWidth >= 720.dp) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             ProductCatalog(allProducts.filter { it.active }, Modifier.weight(1f), businessType, onProduct = { customizing = it })
-                            CartPanel(cart, Modifier.width(390.dp).fillMaxHeight(), onSubmit = { service, method, discountText, tenderText, note ->
+                            CartPanel(cart, Modifier.width(330.dp).fillMaxHeight(), onSubmit = { service, method, discountText, tenderText, note ->
                                 val discount = parseMoney(discountText)
                                 val tendered = if (method == "Cash") parseMoney(tenderText) else 0
                                 if (discount == null || (method == "Cash" && tendered == null)) alert("Enter valid payment amounts")
