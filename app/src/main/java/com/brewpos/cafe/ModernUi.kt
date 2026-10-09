@@ -118,7 +118,7 @@ fun DashboardView(db: StoreDb, products: List<Product>, sales: List<Sale>,
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text("Recent orders", color = Espresso, fontWeight = FontWeight.Bold, fontSize = 19.sp)
-                Text("Offline local data · Cloud sync coming in hybrid milestone", color = Muted, fontSize = 11.sp)
+                Text(db.pendingSyncCount().toString() + " sale(s) queued locally · Upload not enabled yet", color = Muted, fontSize = 11.sp)
             }
             TextButton(onClick = onMenu) { Text("Manage menu →") }
         }

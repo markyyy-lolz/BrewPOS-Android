@@ -7,9 +7,18 @@ import android.database.sqlite.SQLiteOpenHelper
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** SQLite source of truth. Completed checkout and stock deductions are one transaction. */
-class StoreDb(context: Context) : SQLiteOpenHelper(context, "brewpos_local.db", null, 1) {
+class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos_local.db", null, 2) {
+    private val terminalId: String by lazy {
+        val prefs = context.getSharedPreferences("brewpos_terminal", Context.MODE_PRIVATE)
+        prefs.getString("installation_uuid", null) ?: UUID.randomUUID().toString().also {
+            prefs.edit().putString("installation_uuid", it).commit()
+        }
+    }
     override fun onConfigure(db: SQLiteDatabase) { super.onConfigure(db); db.setForeignKeyConstraintsEnabled(true) }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -33,6 +42,7 @@ class StoreDb(context: Context) : SQLiteOpenHelper(context, "brewpos_local.db", 
         )""")
         db.execSQL("CREATE INDEX sale_date_idx ON sales(created_at)")
         db.execSQL("CREATE INDEX sale_line_sale_idx ON sale_lines(sale_id)")
+        createSyncOutbox(db)
         listOf(
             Product(name="Spanish Latte", category="Coffee", priceCents=16500, stock=50, icon="☕"),
             Product(name="Iced Americano", category="Coffee", priceCents=12000, stock=50, icon="🧊"),
@@ -50,8 +60,46 @@ class StoreDb(context: Context) : SQLiteOpenHelper(context, "brewpos_local.db", 
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Future releases must use additive, non-destructive migrations.
-        if (oldVersion > newVersion) error("Unsupported schema downgrade")
+        require(oldVersion <= newVersion) { "Unsupported schema downgrade" }
+        if (oldVersion < 2) createSyncOutbox(db)
+    }
+
+    /** Additive local queue. Network upload and server acknowledgements are NOT active yet. */
+    private fun createSyncOutbox(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE IF NOT EXISTS sync_outbox (
+            event_id TEXT PRIMARY KEY,
+            sale_id INTEGER NOT NULL UNIQUE REFERENCES sales(id),
+            installation_id TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','synced')),
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at INTEGER NOT NULL,
+            last_attempt_at INTEGER
+        )""")
+        db.execSQL("CREATE INDEX IF NOT EXISTS sync_outbox_pending_idx ON sync_outbox(state,created_at)")
+    }
+
+    fun pendingSyncCount(): Int {
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM sync_outbox WHERE state='pending'", null).use { c ->
+            return if (c.moveToFirst()) c.getInt(0) else 0
+        }
+    }
+
+    /** Outbox stays pending until a future authenticated sync client gets a server ACK. */
+    fun pendingSyncBatch(limit: Int = 25): List<Pair<String,String>> {
+        val batch = mutableListOf<Pair<String,String>>()
+        readableDatabase.query("sync_outbox", arrayOf("event_id","payload"),
+            "state=?", arrayOf("pending"), null, null, "created_at ASC", limit.coerceIn(1,100).toString()).use { c ->
+            while (c.moveToNext()) batch += c.getString(0) to c.getString(1)
+        }
+        return batch
+    }
+
+    /** Call only after an authenticated backend has durably acknowledged the event. */
+    fun acknowledgeSyncedEvent(eventId: String): Boolean {
+        val v = ContentValues().apply { put("state", "synced"); putNull("last_error") }
+        return writableDatabase.update("sync_outbox", v, "event_id=? AND state='pending'", arrayOf(eventId)) == 1
     }
 
     private fun insertProduct(db: SQLiteDatabase, product: Product): Long {
@@ -130,6 +178,47 @@ class StoreDb(context: Context) : SQLiteOpenHelper(context, "brewpos_local.db", 
                     put("line_cents", line.lineCents)
                 })
             }
+            // Save sale + durable sync event atomically: failed outbox write rolls back sale.
+            // Existing local sale IDs are not globally unique; use the UUID as cloud sale ID.
+            val eventId = UUID.randomUUID().toString()
+            val snapshot = JSONObject().apply {
+                put("payload_version", 1)
+                put("event_type", "sale.completed")
+                put("event_id", eventId)
+                put("client_sale_id", eventId)
+                put("installation_id", terminalId)
+                put("local_receipt_no", receiptNo)
+                put("created_offline_at_ms", now)
+                put("service_type", service)
+                put("payment_method", payment)
+                put("subtotal_centavos", totals.subtotal)
+                put("discount_centavos", totals.discount)
+                put("total_centavos", totals.payable)
+                put("tendered_centavos", acceptedTender)
+                put("change_centavos", change)
+                put("notes", notes)
+                put("line_items", JSONArray().apply {
+                    lines.forEachIndexed { index, line ->
+                        put(JSONObject().apply {
+                            put("line_no", index + 1)
+                            put("local_product_id", line.product.id)
+                            put("product_name", line.product.name)
+                            put("options", line.options)
+                            put("quantity", line.quantity)
+                            put("unit_centavos", line.unitCents)
+                            put("line_centavos", line.lineCents)
+                        })
+                    }
+                })
+            }
+            db.insertOrThrow("sync_outbox", null, ContentValues().apply {
+                put("event_id", eventId)
+                put("sale_id", saleId)
+                put("installation_id", terminalId)
+                put("payload", snapshot.toString())
+                put("state", "pending")
+                put("created_at", now)
+            })
             db.setTransactionSuccessful()
             return Sale(saleId, receiptNo, now, service, payment, totals.subtotal,
                 totals.discount, totals.payable, acceptedTender, change, notes, "Queued")
