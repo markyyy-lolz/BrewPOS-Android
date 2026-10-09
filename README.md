@@ -1,11 +1,11 @@
-# ☕ BrewPOS v1.2 Activation Preview — Coffee Shop POS for Android
+# ☕ BrewPOS v2.0 UI Foundation Preview — Coffee Shop POS for Android
 
 **Azurate Software Solutions** · Proprietary Android Studio project · Offline-first · Customer receipt + price-free barista slip via one Bluetooth printer
 
 **For GitHub upload:** See [HOW_TO_PUBLISH.md](HOW_TO_PUBLISH.md). For package roadmap and proposed prices, see [docs/PRICING_AND_ROADMAP.md](docs/PRICING_AND_ROADMAP.md). GitHub Actions attempts a debug APK build on every main-branch push; it is not a guarantee the app compiles without further fixes.
 
 
-A local-first Android POS **source project** written in Kotlin and Jetpack Compose, optimized for coffee shops, phones, and tablets.
+The v2.0 foundation adds a responsive dashboard, sidebar navigation, and a redesigned activation screen. It does **not** yet include working cloud synchronization or the owner website deployment.\n\nA local-first Android POS **source project** written in Kotlin and Jetpack Compose, optimized for coffee shops, phones, and tablets.
 
 ## Modules included
 

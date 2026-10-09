@@ -11,8 +11,8 @@ android {
         applicationId = "com.brewpos.cafe"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2.0-preview"
+        versionCode = 4
+        versionName = "2.0.0-ui-foundation-preview"
     }
     buildFeatures { compose = true }
     compileOptions {
