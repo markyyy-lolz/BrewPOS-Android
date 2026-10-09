@@ -11,4 +11,11 @@ object BrewBusinessProfile {
 
     fun normalize(value: String?): String =
         supported.firstOrNull { it.equals(value?.trim(), ignoreCase = true) } ?: DEFAULT
+
+    fun suggestedCategories(value: String): List<String> = when (normalize(value)) {
+        "Restaurant" -> listOf("Main Course", "Appetizers", "Sides", "Drinks", "Desserts")
+        "Milk Tea" -> listOf("Milk Tea", "Fruit Tea", "Coffee", "Snacks", "Add-ons")
+        "Silogan" -> listOf("Silog Meals", "Rice Meals", "Add-ons", "Drinks", "Sides")
+        else -> listOf("Coffee", "Non-Coffee", "Tea", "Pastries", "Food")
+    }
 }
