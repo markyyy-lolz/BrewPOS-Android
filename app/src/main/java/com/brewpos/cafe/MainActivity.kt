@@ -44,17 +44,17 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-private val Coffee = Color(0xFF30241D)
-private val Cocoa = Color(0xFF756458)
-private val Cream = Color(0xFFF7F5F1)
-private val Gold = Color(0xFFC68958)
-private val Leaf = Color(0xFF386A54)
-private val Pale = Color(0xFFF1E9DD)
+private val Coffee = BrewPalette.Ink
+private val Cocoa = BrewPalette.Muted
+private val Cream = BrewPalette.Background
+private val Gold = BrewPalette.Accent
+private val Leaf = BrewPalette.Forest
+private val Pale = BrewPalette.Cream
 private val CoffeeTheme = lightColorScheme(
-    primary = Coffee, onPrimary = Color.White, secondary = Leaf,
+    primary = Leaf, onPrimary = Color.White, secondary = Coffee,
     background = Cream, surface = Color.White, onSurface = Coffee,
     surfaceVariant = Pale, onSurfaceVariant = Cocoa,
-    outline = Color(0xFFD9CFC3), error = Color(0xFFB3342D)
+    outline = BrewPalette.Border, error = Color(0xFFB3342D)
 )
 
 private fun todayStart(): Long = Calendar.getInstance().apply {
@@ -190,6 +190,9 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     val db = remember { StoreDb(context.applicationContext) }
     val prefs = remember { context.getSharedPreferences("shop_prefs", Context.MODE_PRIVATE) }
     var shopName by remember { mutableStateOf(prefs.getString("shop_name", "Brew & Bean Coffee") ?: "Brew & Bean Coffee") }
+    var businessType by remember {
+        mutableStateOf(BrewBusinessProfile.normalize(prefs.getString("business_type", null)))
+    }
     var footer by remember { mutableStateOf(prefs.getString("footer", "Thank you! Come back for another cup.") ?: "Thank you!") }
     var printerMac by remember { mutableStateOf(prefs.getString("printer_mac", "") ?: "") }
     var printerWidth by remember { mutableIntStateOf(prefs.getInt("printer_width", 32)) }
@@ -290,8 +293,23 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("☕  BREWPOS", modifier = Modifier.clickable { tab = "Dashboard" }, color = Coffee, fontWeight = FontWeight.Black, fontSize = 20.sp)
-                    Text(shopName, color = Cocoa, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(34.dp).background(
+                                BrewPalette.Forest, RoundedCornerShape(11.dp)
+                            ),
+                            contentAlignment = Alignment.Center
+                        ) { Text("☕", fontSize = 19.sp) }
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("BrewPOS", modifier = Modifier.clickable { tab = "Dashboard" },
+                                color = Coffee, fontWeight = FontWeight.ExtraBold, fontSize = 19.sp)
+                            Text(
+                                "$businessType • " + shopName, color = Cocoa, fontSize = 11.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
                 Surface(color = Color.White, shape = RoundedCornerShape(22.dp)) {
                     TextButton(onClick = onManageLicense) {
@@ -312,15 +330,15 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         }
     ) { padding ->
         Row(Modifier.fillMaxSize().padding(padding)) {
-            if (isWide) BrewSidebar(tab, onSelect = { tab = it; cartOnPhone = false })
+            if (isWide) BrewSidebar(tab, businessType, onSelect = { tab = it; cartOnPhone = false })
             Box(Modifier.weight(1f).fillMaxHeight()) {
             when (tab) {
-                "Dashboard" -> DashboardView(db, allProducts, allSales,
+                "Dashboard" -> DashboardView(db, allProducts, allSales, businessType,
                     onSell = { tab = "POS" }, onOrders = { tab = "Orders" }, onMenu = { tab = "Menu" })
                 "POS" -> BoxWithConstraints(Modifier.fillMaxSize()) {
                     if (maxWidth >= 840.dp) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            ProductCatalog(allProducts.filter { it.active }, Modifier.weight(1f), onProduct = { customizing = it })
+                            ProductCatalog(allProducts.filter { it.active }, Modifier.weight(1f), businessType, onProduct = { customizing = it })
                             CartPanel(cart, Modifier.width(390.dp).fillMaxHeight(), onSubmit = { service, method, discountText, tenderText, note ->
                                 val discount = parseMoney(discountText)
                                 val tendered = if (method == "Cash") parseMoney(tenderText) else 0
@@ -346,7 +364,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                                 })
                             }
                         } else {
-                            ProductCatalog(allProducts.filter { it.active }, Modifier.fillMaxSize().padding(horizontal = 14.dp), onProduct = { customizing = it })
+                            ProductCatalog(allProducts.filter { it.active }, Modifier.fillMaxSize().padding(horizontal = 14.dp), businessType, onProduct = { customizing = it })
                             Surface(Modifier.align(Alignment.BottomCenter).padding(14.dp).fillMaxWidth(),
                                 shape = RoundedCornerShape(20.dp), shadowElevation = 6.dp, color = Coffee) {
                                 Row(Modifier.clickable { cartOnPhone = true }.padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -374,6 +392,11 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 })
                 "Reports" -> ReportsView(db, allSales)
                 "Settings" -> SettingsView(shopName, footer, printerMac, printerWidth, autoCut, autoPrintBoth,
+                    businessType = businessType,
+                    onBusinessTypeChange = { selected ->
+                        businessType = selected
+                        prefs.edit().putString("business_type", selected).apply()
+                    },
                     onSave = { newName, newFooter, mac, width, cut, autoBoth ->
                         shopName = newName.ifBlank { "Coffee Shop" }; footer = newFooter
                         printerMac = mac; printerWidth = width; autoCut = cut; autoPrintBoth = autoBoth
@@ -418,18 +441,26 @@ private fun SectionTitle(title: String, subtitle: String = "") {
 }
 
 @Composable
-private fun ProductCatalog(products: List<Product>, modifier: Modifier, onProduct: (Product) -> Unit) {
+private fun ProductCatalog(
+    products: List<Product>, modifier: Modifier, businessType: String,
+    onProduct: (Product) -> Unit
+) {
     var search by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("All") }
-    val categories = listOf("All", "Coffee", "Non-Coffee", "Tea", "Pastries")
+    // Use the real menu categories instead of forcing coffee-only taxonomy.
+    val categories = remember(products) {
+        listOf("All") + products.map { it.category.trim() }
+            .filter { it.isNotBlank() }.distinct().sorted()
+    }
+    LaunchedEffect(categories) { if (category !in categories) category = "All" }
     val filtered = products.filter {
         (category == "All" || it.category == category) && it.name.contains(search, ignoreCase = true)
     }
     Column(modifier) {
-        SectionTitle("Explore the menu", "Choose a coffee and make it yours")
+        SectionTitle("New $businessType order", "Select menu items • customize • checkout")
         OutlinedTextField(value = search, onValueChange = { search = it },
             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
-            singleLine = true, label = { Text("Search coffee, pastries, tea...") }, leadingIcon = { Text("⌕", fontSize = 22.sp) })
+            singleLine = true, label = { Text("Search menu or product name") }, leadingIcon = { Text("⌕", fontSize = 22.sp) })
         Spacer(Modifier.height(10.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             categories.forEach { item -> FilterChip(selected = item == category, onClick = { category = item }, label = { Text(item) }) }
@@ -441,11 +472,34 @@ private fun ProductCatalog(products: List<Product>, modifier: Modifier, onProduc
             contentPadding = PaddingValues(bottom = 100.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(filtered, key = { it.id }) { p ->
-                Surface(modifier = Modifier.fillMaxWidth().clickable(enabled = !p.trackStock || p.stock > 0) { onProduct(p) },
-                    color = Color.White, shape = RoundedCornerShape(22.dp), shadowElevation = 1.dp) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clickable(
+                        enabled = !p.trackStock || p.stock > 0
+                    ) { onProduct(p) },
+                    color = Color.White,
+                    shape = RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BrewPalette.Border)
+                ) {
                     Column(Modifier.padding(15.dp)) {
-                        Box(Modifier.fillMaxWidth().height(94.dp).background(Pale, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier.fillMaxWidth().height(106.dp).background(
+                                BrewPalette.Cream, RoundedCornerShape(15.dp)
+                            ), contentAlignment = Alignment.Center
+                        ) {
                             Text(p.icon, fontSize = 47.sp)
+                            if (p.trackStock && p.stock <= 0) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.errorContainer,
+                                    shape = RoundedCornerShape(9.dp),
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                                ) {
+                                    Text(
+                                        "SOLD OUT", modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                        fontSize = 9.sp, color = MaterialTheme.colorScheme.onErrorContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                         Spacer(Modifier.height(10.dp))
                         Text(p.category.uppercase(), fontSize = 10.sp, color = Leaf, fontWeight = FontWeight.Bold)
@@ -533,7 +587,13 @@ private fun CartPanel(cart: List<CartLine>, modifier: Modifier = Modifier,
         Column(Modifier.fillMaxSize().padding(17.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Current order", fontSize = 22.sp, color = Coffee, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-                Text("${cart.sumOf { it.quantity }} items", color = Cocoa, fontSize = 12.sp)
+                Surface(color = BrewPalette.Cream, shape = RoundedCornerShape(10.dp)) {
+                    Text(
+                        "${cart.sumOf { it.quantity }} items", color = BrewPalette.Forest,
+                        fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
             }
             Spacer(Modifier.height(7.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -546,7 +606,7 @@ private fun CartPanel(cart: List<CartLine>, modifier: Modifier = Modifier,
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("🛍", fontSize = 42.sp)
                     Text("Your cart is empty", fontWeight = FontWeight.Bold)
-                    Text("Add a coffee to start", color = Cocoa)
+                    Text("Select a menu item to start", color = Cocoa)
                 }
             } else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(13.dp)) {
                 items(cart, key = { it.key }) { line ->
@@ -770,6 +830,8 @@ private fun Metric(title: String, number: String, caption: String) {
 @Composable
 private fun SettingsView(initialName: String, initialFooter: String, initialMac: String,
                          initialWidth: Int, initialCut: Boolean, initialAutoBoth: Boolean,
+                         businessType: String,
+                         onBusinessTypeChange: (String) -> Unit,
                          onSave: (String, String, String, Int, Boolean, Boolean) -> Unit,
                          onRequestPermission: () -> Unit, onExport: () -> Unit) {
     val context = LocalContext.current
@@ -787,8 +849,21 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
         SectionTitle("Shop settings", "Personalize the store and connect an ESC/POS receipt printer")
         Surface(color = Color.White, shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text("STORE PROFILE", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                OutlinedTextField(shop, { shop = it }, label = { Text("Coffee shop name") }, modifier = Modifier.fillMaxWidth())
+                Text("BUSINESS PROFILE", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(
+                    "Choose how BrewPOS labels your restaurant workspace. Menu categories remain editable.",
+                    color = Cocoa, fontSize = 12.sp
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BrewBusinessProfile.supported.forEach { choice ->
+                        FilterChip(
+                            selected = businessType == choice,
+                            onClick = { onBusinessTypeChange(choice) },
+                            label = { Text(choice) }
+                        )
+                    }
+                }
+                OutlinedTextField(shop, { shop = it }, label = { Text("Business or shop name") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(footer, { footer = it }, label = { Text("Receipt footer") }, modifier = Modifier.fillMaxWidth(), maxLines = 3)
                 HorizontalDivider()
                 Text("BLUETOOTH THERMAL PRINTER", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -831,9 +906,9 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
         OutlinedButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Export sales summary (CSV)") }
         Text("CSV amounts are in centavos. Keep exports in a safe location; CSV is not a full database backup.", color = Cocoa, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
-        Text("BrewPOS v1.1 • One-printer customer + barista slips • Android 8.0+", color = Cocoa, fontSize = 12.sp)
+        Text("BrewPOS v2.0 • Hybrid alpha • Customer + kitchen/barista slips • Android 8.0+", color = Cocoa, fontSize = 12.sp)
         Text("Payments named GCash, Maya, and Card are manually recorded. This app does not capture payments through any gateway.", color = Cocoa, fontSize = 12.sp)
-        Text("Local data is not yet backed up or synchronized across devices. Do not clear app storage without exporting your records.", color = Color(0xFFAE4C37), fontSize = 12.sp)
+        Text("Offline sales are stored locally and queue for cloud sync after device registration. There is no complete local restore backup; do not clear app storage.", color = Color(0xFFAE4C37), fontSize = 12.sp)
     }
 }
 
