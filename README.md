@@ -5,7 +5,7 @@
 **For GitHub upload:** See [HOW_TO_PUBLISH.md](HOW_TO_PUBLISH.md). For package roadmap and proposed prices, see [docs/PRICING_AND_ROADMAP.md](docs/PRICING_AND_ROADMAP.md). GitHub Actions attempts a debug APK build on every main-branch push; it is not a guarantee the app compiles without further fixes.
 
 
-The v2.0 foundation adds a responsive dashboard, sidebar navigation, and a redesigned activation screen. It does **not** yet include working cloud synchronization or the owner website deployment.\n\nA local-first Android POS **source project** written in Kotlin and Jetpack Compose, optimized for coffee shops, phones, and tablets.
+The v2.0 foundation includes a redesigned activation screen, responsive dashboard and tablet sidebar navigation, a static marketing website + **sample-only** dashboard preview in `website/`, and an **additive SQLite v1→v2 migration** with a transactional sale outbox. New sales have globally unique pending upload events so the future hybrid client can resume safely. **No cloud events are uploaded yet.** The Supabase schema is a non-applied draft at `supabase/drafts/brewpos_v2_dev_schema.sql`. Do not mistake the website preview for a live merchant portal or this APK for a fully hybrid release.\n\nA local-first Android POS **source project** written in Kotlin and Jetpack Compose, optimized for coffee shops, phones, and tablets.
 
 ## Modules included
 
@@ -34,10 +34,22 @@ The Android app now gates checkout behind an owner-issued signed **Lifetime / Mo
 
 **Not a commercial production release; this is a DEBUG/APK preview for testing only. No Supabase Hybrid sync.**
 
+
+## BrewPOS v2.0 foundation status (not production)
+- Modern responsive Android navigation + dashboard + activation layout — implemented, CI-tested only.
+- Customer receipt and barista slip on one Bluetooth printer — existing v1 implementation, not yet hardware-verified.
+- Device-bound signed activation — implemented preview, not tamper-proof or hosted.
+- Additive SQLite schema v2 creates `sync_outbox`; each new checkout writes one unique pending sale event in the same DB transaction.
+- **No uploader / Supabase Edge Function / cloud ACK / download cursor yet.** Queued items must never be marked synced without a durable server response.
+- Website `website/` is a *static marketing site* with a clearly labeled illustrative dashboard, not live analytics.
+- Supabase SQL in `supabase/drafts/` is not applied and must be tested in a separate development project first.
+- Private GitHub Actions publishes a **debug prerelease** for testing; sign separately for commercial use.
+- No full restore backup, refunds/voids, BIR invoicing or multi-device conflict resolution yet.
+
 ## What this release does not do
 
 - **Not a prebuilt APK.** Android SDK / Gradle / Google Maven were unavailable in the build environment, so a device build and UI end-to-end tests were NOT performed.
-- No Supabase or cross-device sync. Each installation has its own SQLite database. **Do not use two tills expecting shared inventory.**
+- No Supabase or cross-device sync yet; new sales are only queued locally for a future uploader. Each installation has its own SQLite database. **Do not use two tills expecting shared inventory.**
 - No payment-gateway/API transaction verification; e-wallet/card payment labels only record the cashier's choice.
 - No staff login / PIN roles, ingredient recipe inventory, refund/void workflow, or fiscal/BIR-compliant invoicing.
 - No **full restorable backup** in v1.1. Sales CSV is for analysis/archive, not a recoverable complete database dump. Don't clear app data.

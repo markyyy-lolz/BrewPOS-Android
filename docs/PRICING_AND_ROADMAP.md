@@ -9,7 +9,7 @@
 | Cloud Standard | ₱699/month + ₱7,999 setup | Not offered | Not yet implemented (Supabase cloud sync, dashboard, cloud backups) |
 | Cloud Premium | ₱1,499/month + ₱14,999 setup | Not offered | Not yet implemented (multi-device/branch, advanced roles, analytics) |
 
-**Software only:** hardware, printers, POS terminals, setup beyond contract scope, major upgrades, and BIR registration/compliance are separate. A *lifetime license* means indefinite use of the purchased supported version, not free future major versions or unlimited support. Subscription billing, renewal enforcement, and activation/licensing **are not implemented** in this repository.
+**Software only:** hardware, printers, POS terminals, setup beyond contract scope, major upgrades, and BIR registration/compliance are separate. A *lifetime license* means indefinite use of the purchased supported version, not free future major versions or unlimited support. Device-bound signed activation is implemented in the offline Android preview; there is no automatic subscription billing, hosted activation service, or payment confirmation. The licensed device requires owner-issued signed renewal codes.
 
 ## Proposed development milestones
 
