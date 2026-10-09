@@ -70,6 +70,18 @@ form.addEventListener('submit', async (event) => {
     firstError.focus(); return;
   }
   const data = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v.value.trim()]));
+  // GitHub Pages is static hosting: it does not run Cloudflare Pages Functions.
+  // Open an email draft directly rather than silently dropping the inquiry.
+  if (window.location.hostname.endsWith('.github.io')) {
+    const body = [
+      'Hello Azurate Software Solutions,', '', 'I am interested in BrewPOS.', '',
+      `Name: ${data.name}`, `Café: ${data.business}`, `Email: ${data.email}`,
+      `Inquiry: ${data.plan}`, '', data.message || '(No further details)',
+    ].join('\n');
+    feedback.textContent = 'Your email app will open with your inquiry. Please press Send in the email app to submit it.';
+    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(`BrewPOS Inquiry — ${data.business}`)}&body=${encodeURIComponent(body)}`;
+    return;
+  }
   data.turnstileToken = document.querySelector('[name="cf-turnstile-response"]')?.value || '';
   submitButton.disabled = true;
   submitButton.textContent = 'Sending inquiry…';

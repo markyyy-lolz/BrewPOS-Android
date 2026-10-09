@@ -1,4 +1,0 @@
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/launcher_espresso" />
-    <foreground android:drawable="@drawable/ic_coffee_foreground" />
-</adaptive-icon>

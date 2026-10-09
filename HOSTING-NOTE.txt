@@ -1,0 +1,1 @@
+BrewPOS static public website. Connect the gh-pages branch root as GitHub Pages publishing source in Settings > Pages. This static hosting uses a mailto inquiry flow; Cloudflare Pages Functions remain in main/website/functions for email automation. Do not claim website is live until Pages is enabled and verified.
