@@ -26,6 +26,13 @@ jobs:
           css=$(curl -sS -L -o /tmp/brewpos-styles.css -w '%{http_code}' --max-time 25 "${site}styles.css")
           test "$css" = "200"
           grep -q 'hero-grid' /tmp/brewpos-styles.css
+          ! grep -q 'href="/styles.css"' /tmp/brewpos-home.html
+          dash=$(curl -sS -L -o /tmp/brewpos-dashboard.html -w '%{http_code}' --max-time 25 "${site}dashboard.html")
+          test "$dash" = "200"
+          grep -q 'Sign in to BrewPOS Cloud' /tmp/brewpos-dashboard.html
+          js=$(curl -sS -L -o /tmp/brewpos-dashboard.js -w '%{http_code}' --max-time 25 "${site}dashboard.js")
+          test "$js" = "200"
+          grep -q 'brew_memberships' /tmp/brewpos-dashboard.js
       - name: Unauthenticated cloud sync must be rejected
         run: |
           set -euo pipefail
