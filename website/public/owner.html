@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#103e36">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' https://rfxzbuocxersgbshczbj.supabase.co; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
+<title>Azurate Owner Console · BrewPOS</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="owner.css">
+<script src="owner.js" defer></script>
+</head><body>
+<a class="skip" href="#workspace">Skip to dashboard</a>
+<div class="auth-screen" id="loginScreen">
+ <div class="auth-art" aria-hidden="true"><div class="art-logo">☕ <span>BrewPOS</span></div>
+ <div class="art-content"><small>AZURATE OWNER CONSOLE</small><h2>Every counter.<br>One workspace.</h2><p>Secure activation, cloud visibility and device oversight for the businesses you support.</p>
+ <div class="art-illustration"><span class="art-stat">▥ <strong>Business analytics</strong><small>Cloud-synced only</small></span><span class="art-stat">◈ <strong>Signed licenses</strong><small>Owner-approved</small></span><span class="art-stat">▣ <strong>Device control</strong><small>Central overview</small></span></div>
+ </div><small class="art-footer">AZURATE SOFTWARE SOLUTIONS · PHILIPPINES</small></div>
+ <div class="auth-form-area"><div class="auth-mobile-logo">☕ BrewPOS <span>/ Owner Console</span></div><form id="loginForm" class="auth-card">
+   <div class="tag"><span class="dot"></span> AUTHORIZED OWNER ACCESS</div>
+   <h1>Welcome back.</h1><p>Sign in using your verified Azurate owner account. Issuing codes requires the original private signing key configured on the server.</p>
+   <label>Email address<input type="email" name="email" placeholder="owner@yourdomain.com" autocomplete="username" required></label>
+   <label>Password<input type="password" name="password" placeholder="Enter your password" autocomplete="current-password" required></label>
+   <button type="submit" class="primary full" id="loginButton">Sign in to dashboard <span aria-hidden="true">→</span></button>
+   <p id="loginError" class="error" role="alert"></p>
+   <p class="subtle">No public signup or default administrator credentials. This website does not store your password.</p>
+ </form><a class="back-link" href="./">← Back to BrewPOS website</a></div>
+</div>
+<div class="app-shell" id="app" hidden>
+<aside class="rail"><a class="rail-logo" href="./"><span class="rail-mark">☕</span><span><b>BrewPOS</b><small>AZURATE OWNER</small></span></a>
+<div class="rail-eyebrow">WORKSPACE</div>
+<nav id="navTabs" aria-label="Owner dashboard">
+<button data-tab="overview" class="active"><span>▦</span> Overview</button>
+<button data-tab="activation"><span>◈</span> Activation generator</button>
+<button data-tab="licenses"><span>▤</span> Issued licenses</button>
+<button data-tab="devices"><span>▣</span> Devices</button>
+<button data-tab="sales"><span>▥</span> Cloud sales</button>
+</nav>
+<div class="rail-bottom"><div class="rail-help"><b>🔒 Server-signed only</b><small>Private keys never run in the browser.</small></div><span>© Azurate Software Solutions</span></div></aside>
+<div class="workarea" id="workspace">
+<header class="workbar"><div><span class="breadcrumb">BrewPOS Cloud <b>/</b> <span id="pageName">Overview</span></span><h1 id="pageTitle">Your workspace</h1><p id="pageSubtitle">Live data from your dedicated BrewPOS Supabase project.</p></div><div class="work-actions"><span id="connection" class="connection">● Cloud connected</span><button id="refresh" class="outline" type="button">↻ Refresh</button><button id="signOut" class="outline" type="button">Sign out</button></div></header>
+<div class="status" id="status" role="status" aria-live="polite"></div>
+<section id="overview" class="view">
+<div class="metrics">
+<article class="metric"><span>Synced revenue <i>↗</i></span><strong id="revenue">₱0.00</strong><small>Most recent 100 cloud transactions</small></article>
+<article class="metric"><span>Synced orders <i>▤</i></span><strong id="orderCount">0</strong><small>Most recent 100 cloud transactions</small></article>
+<article class="metric"><span>Registered devices <i>▣</i></span><strong id="deviceCount">0</strong><small id="activeDeviceCount">0 active devices</small></article>
+<article class="metric"><span>Issued licenses <i>◈</i></span><strong id="licenseCount">0</strong><small>Most recent 200 audit records</small></article>
+</div>
+<div class="panels">
+<div class="panel featured"><div class="overline">AZURATE LICENSING</div><h2>Activate the next device.</h2><p>Create secure 7-day trials, 30-day monthly licenses, or device-bound lifetime activation. All keys are signed on the server.</p><button id="goActivation" class="light" type="button">Open activation generator →</button><div class="feature-art" aria-hidden="true">☕ <span>BP1</span></div></div>
+<div class="panel"><div class="panel-heading"><div><h2>Cloud status</h2><p>Dedicated BrewPOS workspace</p></div><span class="pill">Secure</span></div><div class="info-line"><span>Online source</span><strong>Supabase BrewPOS</strong></div><div class="info-line"><span>Organizations</span><strong id="orgCount">0</strong></div><div class="info-line"><span>Sync visibility</span><strong>Cloud-synced only</strong></div><p class="fine">Offline tablet sales appear after successful sync. This is not a consolidated all-time accounting report.</p></div>
+</div></section>
+<section id="activation" class="view" hidden>
+<div class="columns">
+<div class="panel"><div class="panel-heading"><div><h2>Generate an activation</h2><p>Authenticated Azurate owner tools</p></div><span class="pill">ECDSA P-256</span></div>
+<form id="issueForm" class="issue-form">
+<label>Customer / business name<input id="customer" name="customer" maxlength="80" minlength="2" placeholder="Example Coffee Shop" required></label>
+<label>Android Device ID<input id="androidId" name="androidId" pattern="[a-fA-F0-9]{16}" minlength="16" maxlength="16" placeholder="16-character Android ID" autocapitalize="off" spellcheck="false" required></label>
+<label>License plan<select id="plan" name="plan" required><option value="TRIAL">Trial — 7 days</option><option value="MONTHLY">Monthly — 30 days</option><option value="LIFETIME">Lifetime — device-bound</option></select></label>
+<div class="issue-note">Only the server can issue a valid code. The Android Device ID must match the code's assigned device exactly. Monthly and trial licenses retain the app's 72-hour offline grace behavior.</div>
+<button id="issueButton" class="primary full" type="submit">◈ Generate signed activation code</button>
+</form>
+</div>
+<div class="panel result-panel"><div class="panel-heading"><div><h2>Activation code</h2><p>Share it securely with your client</p></div></div>
+<div id="noCode" class="empty-code"><span>✧</span><h3>Ready to issue</h3><p>A verified BP1 activation code appears here after the server signs and records it.</p></div>
+<div id="codeResult" hidden><div class="code-label">SIGNED ACTIVATION TOKEN</div><textarea id="generatedCode" readonly spellcheck="false" aria-label="Generated BrewPOS activation"></textarea><button class="outline full" type="button" id="copyCode">Copy activation code</button><div class="issue-result-details"><p id="issuedTo"></p><p id="issueExpiry"></p></div><p class="fine">Shown once. The database keeps an audit fingerprint, not the full code. Save it securely; a lost code must be reissued.</p></div>
+</div>
+</div></section>
+<section id="licenses" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Issued license history</h2><p>Last 100 owner-issued activations · Codes themselves are not stored</p></div></div><div class="table-scroll"><table><thead><tr><th>Customer</th><th>Android Device ID</th><th>Plan</th><th>Expiration</th><th>Issued</th></tr></thead><tbody id="licensesRows"></tbody></table></div></div></section>
+<section id="devices" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Registered cloud devices</h2><p>Latest 100 authorized BrewPOS installations</p></div></div><div class="table-scroll"><table><thead><tr><th>Device</th><th>Installation ID</th><th>Status</th><th>Last seen</th></tr></thead><tbody id="devicesRows"></tbody></table></div><p class="fine">Android Device ID for offline licensing and cloud installation UUID are different identities. This dashboard does not imply that a signed offline license can be remotely revoked.</p></div></section>
+<section id="sales" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Synced cloud sales</h2><p>Last 100 records only • No sample transactions</p></div></div><div class="table-scroll"><table><thead><tr><th>Receipt</th><th>Received</th><th>Payment</th><th>Amount</th><th>Status</th></tr></thead><tbody id="salesRows"></tbody></table></div></div></section>
+<footer class="footer">BrewPOS by Azurate Software Solutions · Owner access only · Actual cloud records, no simulated data</footer>
+</div></div>
+</body></html>
