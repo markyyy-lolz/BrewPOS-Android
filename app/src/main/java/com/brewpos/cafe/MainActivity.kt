@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,12 +44,12 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-private val Coffee = Color(0xFF4B3029)
-private val Cocoa = Color(0xFF715146)
-private val Cream = Color(0xFFF8F4EB)
-private val Gold = Color(0xFFD3A66B)
+private val Coffee = Color(0xFF30241D)
+private val Cocoa = Color(0xFF756458)
+private val Cream = Color(0xFFF7F5F1)
+private val Gold = Color(0xFFC68958)
 private val Leaf = Color(0xFF386A54)
-private val Pale = Color(0xFFF1E7D9)
+private val Pale = Color(0xFFF1E9DD)
 private val CoffeeTheme = lightColorScheme(
     primary = Coffee, onPrimary = Color.White, secondary = Leaf,
     background = Cream, surface = Color.White, onSurface = Coffee,
@@ -113,35 +114,71 @@ private fun ActivationScreen(
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
-    Surface(color = Cream, modifier = Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-            verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("☕ BrewPOS Activation", color = Coffee, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            Text("Azurate Software Solutions", color = Cocoa)
-            Spacer(Modifier.height(18.dp))
-            Text(current.message.ifBlank { "Enter your signed activation code." }, color = if(current.grace) Color(0xFF9E681A) else Cocoa)
-            Spacer(Modifier.height(18.dp))
-            Text("DEVICE ID", fontWeight = FontWeight.Bold)
-            SelectionContainer { Text(deviceId, color = Coffee) }
-            TextButton(onClick = {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("BrewPOS Device ID", deviceId))
-            }) { Text("Copy Device ID") }
-            Text("Send this Device ID to Azurate Software Solutions to receive your license.", color = Cocoa)
-            Spacer(Modifier.height(18.dp))
-            OutlinedTextField(value = input, onValueChange = { input = it; error = "" },
-                label = { Text("Activation code") }, minLines = 3, maxLines = 5,
-                modifier = Modifier.fillMaxWidth())
-            if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = { error = onActivate(input) ?: "" }, enabled = input.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                Text("Activate BrewPOS")
+    BoxWithConstraints(Modifier.fillMaxSize().background(Cream)) {
+        val wide = maxWidth >= 760.dp
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            if (wide) Column(
+                Modifier.width(340.dp).fillMaxHeight().background(Coffee).padding(28.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                    Text("☕ BREWPOS", color = Color.White, fontWeight = FontWeight.Black, fontSize = 24.sp)
+                    Spacer(Modifier.height(42.dp))
+                    Text("Your counter,\nreimagined.", color = Color.White, fontSize = 36.sp,
+                        fontWeight = FontWeight.ExtraBold, lineHeight = 42.sp)
+                    Text("Modern coffee shop selling. Built for the everyday rush.",
+                        color = Color(0xFFE2CDBC), fontSize = 15.sp, lineHeight = 23.sp)
+                    Surface(color = Color(0xFF4B382C), shape = RoundedCornerShape(20.dp)) {
+                        Text("✓ Local-first checkout\n✓ Customer + barista slips\n✓ Easy menu management",
+                            color = Color.White, modifier = Modifier.padding(18.dp),
+                            lineHeight = 26.sp, fontSize = 13.sp)
+                    }
+                }
+                Text("AZURATE SOFTWARE SOLUTIONS", color = Color(0xFFCEB7A5), fontSize = 11.sp)
             }
-            if (canCancel) TextButton(onClick = onCancel) { Text("Back to POS") }
-            Spacer(Modifier.height(8.dp))
-            Text("Lifetime = one-time activation. Monthly/Trial = signed expiration date; an additional 72-hour offline grace period applies.",
-                color = Cocoa, fontSize = 12.sp, textAlign = TextAlign.Center)
+            Box(Modifier.weight(1f).padding(if (wide) 26.dp else 12.dp), contentAlignment = Alignment.Center) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().widthIn(max = 510.dp),
+                    color = Color.White, shape = RoundedCornerShape(28.dp), shadowElevation = 4.dp
+                ) {
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(26.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (!wide) Text("☕ BREWPOS", color = Coffee, fontWeight = FontWeight.Black, fontSize = 22.sp)
+                        Text("Welcome to BrewPOS", color = Coffee, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("Activate this device to start selling.", color = Cocoa, fontSize = 13.sp)
+                        if (current.message.isNotBlank()) Surface(color = Pale, shape = RoundedCornerShape(14.dp)) {
+                            Text(current.message, modifier = Modifier.padding(12.dp), color = Coffee, fontSize = 12.sp)
+                        }
+                        Text("YOUR DEVICE ID", color = Cocoa, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Surface(color = Cream, shape = RoundedCornerShape(16.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                                SelectionContainer {
+                                    Text(deviceId, color = Coffee, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                }
+                                TextButton(onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("BrewPOS Device ID", deviceId))
+                                }) { Text("Copy device ID ↗") }
+                            }
+                        }
+                        Text("Send this device ID to Azurate to request your license.", color = Cocoa, fontSize = 12.sp)
+                        OutlinedTextField(
+                            value = input, onValueChange = { input = it; error = "" },
+                            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                            label = { Text("Paste activation code") }, minLines = 3, maxLines = 5
+                        )
+                        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        Button(
+                            onClick = { error = onActivate(input) ?: "" },
+                            enabled = input.isNotBlank(), shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth().height(54.dp)
+                        ) { Text("Activate BrewPOS →", fontWeight = FontWeight.Bold) }
+                        if (canCancel) TextButton(onClick = onCancel) { Text("Back to POS") }
+                        Text("Lifetime, monthly and trial activation. 72-hour grace applies to expired time-limited plans.",
+                            color = Cocoa, fontSize = 11.sp, textAlign = TextAlign.Center)
+                    }
+                }
+            }
         }
     }
 }
@@ -161,7 +198,8 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     var allProducts by remember { mutableStateOf(db.products(includeArchived = true)) }
     var allSales by remember { mutableStateOf(db.sales()) }
     val cart = remember { mutableStateListOf<CartLine>() }
-    var tab by remember { mutableStateOf("POS") }
+    var tab by remember { mutableStateOf("Dashboard") }
+    val isWide = LocalConfiguration.current.screenWidthDp >= 1100
     var cartOnPhone by remember { mutableStateOf(false) }
     var customizing by remember { mutableStateOf<Product?>(null) }
     var editing by remember { mutableStateOf<Product?>(null) }
@@ -250,7 +288,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("☕  BREWPOS", color = Coffee, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    Text("☕  BREWPOS", modifier = Modifier.clickable { tab = "Dashboard" }, color = Coffee, fontWeight = FontWeight.Black, fontSize = 20.sp)
                     Text(shopName, color = Cocoa, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Surface(color = Color.White, shape = RoundedCornerShape(22.dp)) {
@@ -261,7 +299,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = Color.White, tonalElevation = 1.dp) {
+            if (!isWide) NavigationBar(containerColor = Color.White, tonalElevation = 1.dp) {
                 listOf(Triple("POS", "☕", "Sell"), Triple("Orders", "🧾", "Orders"),
                     Triple("Menu", "📋", "Menu"), Triple("Reports", "📊", "Reports"),
                     Triple("Settings", "⚙", "Settings")).forEach { (key, symbol, label) ->
@@ -271,8 +309,12 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
             }
         }
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Row(Modifier.fillMaxSize().padding(padding)) {
+            if (isWide) BrewSidebar(tab, onSelect = { tab = it; cartOnPhone = false })
+            Box(Modifier.weight(1f).fillMaxHeight()) {
             when (tab) {
+                "Dashboard" -> DashboardView(db, allProducts, allSales,
+                    onSell = { tab = "POS" }, onOrders = { tab = "Orders" }, onMenu = { tab = "Menu" })
                 "POS" -> BoxWithConstraints(Modifier.fillMaxSize()) {
                     if (maxWidth >= 840.dp) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -341,6 +383,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                             requestNearby.launch(Manifest.permission.BLUETOOTH_CONNECT)
                     }, onExport = { exportCsv.launch("brewpos-sales.csv") })
             }
+            }
         }
     }
     customizing?.let { product ->
@@ -380,7 +423,7 @@ private fun ProductCatalog(products: List<Product>, modifier: Modifier, onProduc
         (category == "All" || it.category == category) && it.name.contains(search, ignoreCase = true)
     }
     Column(modifier) {
-        SectionTitle("New order", "Tap a drink to customize and add it to the bill")
+        SectionTitle("Explore the menu", "Choose a coffee and make it yours")
         OutlinedTextField(value = search, onValueChange = { search = it },
             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
             singleLine = true, label = { Text("Search coffee, pastries, tea...") }, leadingIcon = { Text("⌕", fontSize = 22.sp) })
@@ -486,7 +529,7 @@ private fun CartPanel(cart: List<CartLine>, modifier: Modifier = Modifier,
     Surface(modifier, color = Color.White, shape = RoundedCornerShape(22.dp), shadowElevation = 1.dp) {
         Column(Modifier.fillMaxSize().padding(17.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Current bill", fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                Text("Current order", fontSize = 22.sp, color = Coffee, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
                 Text("${cart.sumOf { it.quantity }} items", color = Cocoa, fontSize = 12.sp)
             }
             Spacer(Modifier.height(7.dp))
@@ -541,7 +584,7 @@ private fun CartPanel(cart: List<CartLine>, modifier: Modifier = Modifier,
             Button(onClick = { onSubmit(service, payment, discountText, tenderText, note.trim()) },
                 enabled = cart.isNotEmpty() && discount != null && enough, modifier = Modifier.fillMaxWidth().height(54.dp),
                 shape = RoundedCornerShape(16.dp)) {
-                Text("Complete sale  •  ${peso(totals.payable.toLong())}", fontWeight = FontWeight.Bold)
+                Text("Charge  ${peso(totals.payable.toLong())}  →", fontWeight = FontWeight.Bold)
             }
         }
     }
