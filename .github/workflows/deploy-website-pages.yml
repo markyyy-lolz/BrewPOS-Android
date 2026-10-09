@@ -1,4 +1,4 @@
-name: Deploy BrewPOS Website to GitHub Pages
+name: Validate BrewPOS Website
 
 on:
   push:
@@ -10,40 +10,29 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "brewpos-github-pages"
-  cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Build and publish website
+  website-tests:
+    name: Validate public website and inquiry API
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout private repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Verify only website files are published
-        run: |
-          set -euo pipefail
-          test -f website/index.html
-          test -f website/dashboard.html
-          test -f website/dashboard.js
-          test -f website/styles.css
-          if grep -REn 'service_role|sb_secret_' website --exclude='README.md'; then
-            echo "Refusing to publish possible server credentials"
-            exit 1
-          fi
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-      - name: Upload only public website directory
-        uses: actions/upload-pages-artifact@v3
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
         with:
-          path: ./website
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          node-version: "22"
+      - name: Check website syntax and tests
+        working-directory: website
+        run: npm run check
+      - name: Confirm static publishing files
+        run: |
+          test -f website/public/index.html
+          test -f website/public/styles.css
+          test -f website/public/privacy.html
+          test -f website/public/terms.html
+          grep -q "Offline Basic" website/public/index.html
+          grep -q "Offline Premium" website/public/index.html
+
+# GitHub Pages itself deploys the gh-pages branch automatically.
+# Do not run an additional Pages Actions deployment from main.
