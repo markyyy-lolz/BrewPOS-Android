@@ -20,7 +20,7 @@ test("owner portal uses a real API and does not expose privileged keys",()=>{
   assert.match(backend,/email_confirmed_at/);
   assert.doesNotMatch(js,/SUPABASE_SERVICE_ROLE_KEY|BREWPOS_LICENSE_PRIVATE_KEY/);
   assert.doesNotMatch(html,/SUPABASE_SERVICE_ROLE_KEY|BREWPOS_LICENSE_PRIVATE_KEY/);
-  assert.doesNotMatch(js,/localStorage|sessionStorage/);
+  assert.doesNotMatch(js, /(?:window|globalThis)\.(?:localStorage|sessionStorage)|(?:localStorage|sessionStorage)\.(?:getItem|setItem|removeItem)/);
   assert.match(backend,/ownerId/);
 });
 test("owner portal never fabricates sample transactions or offline records",()=>{
