@@ -111,3 +111,8 @@ Run Android/JVM unit tests in Android Studio with `gradle :app:testDebugUnitTest
 - Robust encrypted restorable backup, shift reconciliation, refunds/voids, tax-ready invoice engine
 
 **Original StorePOS/MotoPOS databases are never touched by this standalone app.**
+
+
+## Website hosting
+
+The website is configured for GitHub Pages deployment using [`.github/workflows/deploy-website-pages.yml`](.github/workflows/deploy-website-pages.yml); the Pages feature must be enabled in GitHub repository Settings → Pages, and private-repo Pages requires an eligible GitHub plan. Supabase hosts only the database, Auth and sync backend. See [website/README.md](website/README.md). Do not advertise the Pages URL until the deployment job passes.

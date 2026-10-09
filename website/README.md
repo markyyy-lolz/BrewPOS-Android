@@ -1,18 +1,29 @@
-# BrewPOS Website — static launch-ready preview
+# BrewPOS Website — GitHub Pages
 
-This is the BrewPOS v2.0 **marketing website plus a non-authenticated dashboard demonstration**. The portal sample sales are not real, and no Supabase keys, customer records, or credentials are exposed.
+BrewPOS website files live in `website/` and are deployed by GitHub Actions through `.github/workflows/deploy-website-pages.yml`. **GitHub Pages is the website host. Supabase is backend only** (authentication, database, authenticated sync API).
 
-## Preview locally
-Use a local static file server from the `website` directory. Example: `python -m http.server 8080` then open http://localhost:8080 .
+## Publish once (repo owner action)
 
-## Cloudflare Pages deployment (manual)
-1. In Cloudflare → Workers & Pages → Create → Pages → Connect to Git.
-2. Select the private `BrewPOS-Android` repository and approve access.
-3. Use **no framework**, **no build command**, and set **output directory to `website`**.
-4. Set production branch to `main`, then deploy.
-5. Review all copy, pricing and merchant contact address prior to publishing.
+1. Open **https://github.com/markyyy-lolz/BrewPOS-Android/settings/pages**
+2. Under **Build and deployment → Source**, choose **GitHub Actions**.
+3. Check **Actions** and wait for the **Deploy BrewPOS Website to GitHub Pages** job to pass. You can also run it with **Run workflow** from the Actions tab.
+4. The expected default project site is `https://markyyy-lolz.github.io/BrewPOS-Android/` once GitHub marks it published. Do **not** assume it is live before the Pages deployment succeeds.
 
-No DNS or public website has been deployed automatically. `portal.html` is marked PREVIEW ONLY, contains **synthetic** data and cannot serve as a secure production admin dashboard.
+**Important:** The Android repository is PRIVATE. GitHub Free supports GitHub Pages for **public** repos only. For private repositories, GitHub Pro/Team/Enterprise is required. Do not make this Android app source public merely to host the marketing website. On GitHub Free, create a separate PUBLIC `BrewPOS-Website` repository containing ONLY the website files, and deploy Pages from that repository. No Android source or owner signing material should be copied there.
 
-## Roadmap
-Connect production owner portal only **after** Supabase Auth, strict per-tenant RLS, audited sync endpoints, real backups, and proper usage limits are implemented. Never publish Supabase secret/service-role credentials in static website files.
+## About the pages
+- `index.html`: BrewPOS marketing landing page (public).
+- `dashboard.html` + `dashboard.js`: merchant sign-in + real read-only Supabase sales scoped through RLS, no persisted browser session.
+- `portal.html`: clearly labeled sample/demo dashboard.
+- `styles.css`, `site.js`: static assets.
+
+Supabase's PUBLIC publishable API key is intentionally embedded in dashboard.js; never add a secret/service-role key. Cloud sales only appear when there are authenticated, confirmed staff accounts with authorized organizations. No public anonymous owner provisioning.
+
+## Updating
+Push website changes to `main`; GitHub Actions publishes `website/` as a Pages artifact. The build never uploads the private Android project. Relative asset URLs support the `/BrewPOS-Android/` Pages project subpath. GitHub Pages ignores Cloudflare's `_headers` file; HTML carries a limited CSP meta tag where supported.
+
+## Developer preview
+`cd website && python -m http.server 8080`, then open http://localhost:8080.
+
+## Status
+A GitHub Actions workflow does not itself guarantee Pages has been enabled or that the account's plan supports private-repo Pages. Check the deployment job and Settings → Pages before sharing the URL with customers.
