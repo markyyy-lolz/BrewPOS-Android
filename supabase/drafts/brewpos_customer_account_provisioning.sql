@@ -25,6 +25,9 @@ create index if not exists brew_customer_accounts_org_idx on public.brew_custome
 alter table public.brew_customer_accounts enable row level security;
 revoke all on public.brew_customer_accounts from public, anon, authenticated, service_role;
 grant select, insert, update on public.brew_customer_accounts to service_role;
+drop policy if exists brew_customer_accounts_no_direct_access on public.brew_customer_accounts;
+create policy brew_customer_accounts_no_direct_access on public.brew_customer_accounts
+ for select to authenticated using (false);
 comment on table public.brew_customer_accounts is
  'Azurate-owner managed, verified invitation accounts. Plans cannot be self-edited and are tied to signed BP1 audit issuance. Only service-role server paths can access.';
 
