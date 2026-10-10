@@ -8,6 +8,7 @@ import androidx.work.*
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -28,6 +29,12 @@ import org.json.JSONObject
  */
 object BrewCloud {
     private const val BASE = "https://rfxzbuocxersgbshczbj.supabase.co"
+    // GitHub Pages is the public redirect, never a development-only localhost server.
+    // Still requires an allow-listed redirect URL and OTP templates in Supabase Auth.
+    private const val PUBLIC_AUTH_REDIRECT =
+        "https://markyyy-lolz.github.io/BrewPOS-Android/signup.html"
+    private fun otpEndpoint() = BASE + "/auth/v1/otp?redirect_to=" +
+        URLEncoder.encode(PUBLIC_AUTH_REDIRECT, "UTF-8")
     private const val PUBLISHABLE_KEY = "sb_publishable_CR-CJKna_rcjQi7gg1CZGQ__DnXI6Lb"
     private const val PREFS = "brewpos_cloud"
     private val lock = Mutex()
@@ -115,7 +122,7 @@ object BrewCloud {
     suspend fun sendLoginCode(email: String): Unit = withContext(Dispatchers.IO) {
         val normalized = email.trim().lowercase()
         require(normalized.contains("@") && normalized.length <= 254) { "Enter a valid email address" }
-        request(BASE + "/auth/v1/otp", JSONObject()
+        request(otpEndpoint(), JSONObject()
             .put("email", normalized)
             .put("create_user", false))
         Unit
@@ -133,7 +140,7 @@ object BrewCloud {
     suspend fun sendRegistrationCode(email: String): Unit = withContext(Dispatchers.IO) {
         val normalized = email.trim().lowercase()
         require(normalized.length in 5..254 && normalized.contains("@")) { "Enter a valid email" }
-        request(BASE + "/auth/v1/otp", JSONObject()
+        request(otpEndpoint(), JSONObject()
             .put("email", normalized)
             .put("create_user", true))
         Unit
