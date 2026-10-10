@@ -83,6 +83,15 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
                         }
                     },modifier=Modifier.fillMaxWidth()) { Text("Send email sign-in code") }
                     if(codeSent) {
+                        TextButton(onClick={
+                            busy=true
+                            scope.launch {
+                                runCatching { BrewCloud.sendLoginCode(email) }
+                                    .onSuccess { status="New six-digit code requested. Check inbox and spam." }
+                                    .onFailure { status=it.message ?: "Unable to resend OTP" }
+                                busy=false
+                            }
+                        },enabled=!busy) { Text("Resend 6-digit code") }
                         OutlinedTextField(otp,{ otp=it.filter(Char::isDigit).take(6) },
                             label={Text("Email verification code")},singleLine=true,modifier=Modifier.fillMaxWidth())
                         Button(enabled=!busy&&otp.length == 6,onClick={
