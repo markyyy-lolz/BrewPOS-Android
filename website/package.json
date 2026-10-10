@@ -6,7 +6,7 @@
   "description": "Production-ready BrewPOS marketing website for Cloudflare Pages",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check public/script.js && node --check public/owner.js && node --check functions/api/inquiry.js && node --check functions/api/health.js && node --test tests/*.test.mjs",
-    "build": "node --check public/script.js && node --check public/owner.js && node --check functions/api/inquiry.js && node --check functions/api/health.js"
+    "check": "node --check public/script.js && node --check public/owner.js && node --check public/signup.js && node --check functions/api/inquiry.js && node --check functions/api/health.js && node --test tests/*.test.mjs",
+    "build": "node --check public/script.js && node --check public/owner.js && node --check public/signup.js && node --check functions/api/inquiry.js && node --check functions/api/health.js"
   }
 }
