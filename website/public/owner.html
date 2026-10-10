@@ -72,12 +72,12 @@
 <section id="accounts" class="view" hidden>
 <div class="columns">
 <div class="panel">
-<div class="panel-heading"><div><h2>Create client cloud account</h2><p>Azurate-approved invitations based on a previously signed license</p></div><span class="pill">Owner only</span></div>
+<div class="panel-heading"><div><h2>Create client cloud account</h2><p>Owner-created passwordless accounts bound to previously issued BP1 licenses</p></div><span class="pill">Owner only</span></div>
 <form id="accountCreateForm" class="issue-form">
 <label>Client email address<input type="email" id="accountEmail" maxlength="254" placeholder="owner@coffeeshop.ph" required autocomplete="off"></label>
 <label>Issued license<select id="accountIssue" required><option value="">Select issued BP1 activation</option></select></label>
-<p class="fine">A distinct customer organization and branch will be created. Supabase sends an account setup invitation. Passwords and license plans are never set by the public browser.</p>
-<button id="accountCreateButton" class="primary full" type="submit">Invite client & create cloud account</button>
+<p class="fine">A distinct customer organization and branch will be created. The customer signs in on BrewPOS Android using a one-time email code. No customer password or activation key is stored by this website.</p>
+<button id="accountCreateButton" class="primary full" type="submit">Create client cloud account</button>
 </form>
 </div>
 <div class="panel">
@@ -90,7 +90,7 @@
 </form>
 </div>
 </div>
-<div class="panel" style="margin-top:16px"><div class="panel-heading"><div><h2>Registered customer accounts</h2><p>Invitations, cloud memberships and license plans</p></div></div>
+<div class="panel" style="margin-top:16px"><div class="panel-heading"><div><h2>Registered customer accounts</h2><p>Owner-created customer logins, organization memberships and license plans</p></div></div>
 <div class="table-scroll"><table><thead><tr><th>Email</th><th>Plan</th><th>Valid until</th><th>Status</th><th>Created</th></tr></thead><tbody id="accountRows"></tbody></table></div>
 </div>
 </section>
