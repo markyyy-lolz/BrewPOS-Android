@@ -194,7 +194,6 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     var printerMac by remember { mutableStateOf(prefs.getString("printer_mac", "") ?: "") }
     var printerWidth by remember { mutableIntStateOf(prefs.getInt("printer_width", 32)) }
     var autoCut by remember { mutableStateOf(prefs.getBoolean("auto_cut", false)) }
-    var autoPrintBoth by remember { mutableStateOf(prefs.getBoolean("auto_print_both", true)) }
     var pendingPrintJobs by remember { mutableIntStateOf(0) }
     var allProducts by remember { mutableStateOf(db.products(includeArchived = true)) }
     var allSales by remember { mutableStateOf(db.sales()) }
@@ -278,8 +277,8 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         refresh()
         receipt = saved
         BrewCloud.queueNow(context)
-        if (autoPrintBoth) thermalPrint(saved, "both", automatic = true)
-        else alert("Sale completed. Print both slips from the receipt screen.")
+        // SQLite sale and durable outbox are saved first; printing is automatic, but never duplicates checkout.
+        thermalPrint(saved, "both", automatic = true)
     }
     Scaffold(
         containerColor = Cream,
@@ -357,11 +356,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                         }
                     }
                 }
-                "Orders" -> OrdersView(allSales, onSelect = { receipt = it }, onNextStatus = { sale ->
-                    val next = when (sale.status) { "Queued" -> "Preparing"; "Preparing" -> "Ready"; "Ready" -> "Served"; else -> "Served" }
-                    runCatching { db.updateStatus(sale.id, next); refresh() }
-                        .onFailure { alert(it.message ?: "Unable to update status") }
-                })
+                "Orders" -> OrdersView(allSales, onSelect = { receipt = it })
                 "Cloud" -> CloudScreen(context, db)
                 "Menu" -> MenuView(allProducts, onAdd = { addingProduct = true }, onEdit = { editing = it }, onRestore = { p ->
                     runCatching { db.saveProduct(p.copy(active = true)); refresh() }
@@ -369,17 +364,16 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                         .onFailure { alert(it.message ?: "Unable to restore") }
                 }, onArchive = { p ->
                     runCatching { db.archiveProduct(p); refresh() }
-                        .onSuccess { alert("${p.name} archived. Past sales are preserved.") }
+                        .onSuccess { alert("${p.name} removed from menu. Past sales are preserved.") }
                         .onFailure { e -> alert(e.message ?: "Unable to archive") }
                 })
                 "Reports" -> ReportsView(db, allSales)
-                "Settings" -> SettingsView(shopName, footer, printerMac, printerWidth, autoCut, autoPrintBoth,
-                    onSave = { newName, newFooter, mac, width, cut, autoBoth ->
+                "Settings" -> SettingsView(shopName, footer, printerMac, printerWidth, autoCut,
+                    onSave = { newName, newFooter, mac, width, cut ->
                         shopName = newName.ifBlank { "Coffee Shop" }; footer = newFooter
-                        printerMac = mac; printerWidth = width; autoCut = cut; autoPrintBoth = autoBoth
+                        printerMac = mac; printerWidth = width; autoCut = cut
                         prefs.edit().putString("shop_name", shopName).putString("footer", footer)
-                            .putString("printer_mac", mac).putInt("printer_width", width).putBoolean("auto_cut", cut)
-                            .putBoolean("auto_print_both", autoBoth).apply()
+                            .putString("printer_mac", mac).putInt("printer_width", width).putBoolean("auto_cut", cut).apply()
                         alert("Settings saved")
                     }, onRequestPermission = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
@@ -602,41 +596,24 @@ private fun MoneyRow(name: String, value: String, prominent: Boolean = false) {
 }
 
 @Composable
-private fun OrdersView(sales: List<Sale>, onSelect: (Sale) -> Unit, onNextStatus: (Sale) -> Unit) {
-    var filter by remember { mutableStateOf("Open queue") }
-    val filtered = if (filter == "Open queue") sales.filter { it.status != "Served" } else sales
+private fun OrdersView(sales: List<Sale>, onSelect: (Sale) -> Unit) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        SectionTitle("Barista queue & orders", "Update preparation status, reprint receipts, or save PDFs")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Open queue", "All history").forEach { item ->
-                FilterChip(selected = filter == item, onClick = { filter = item }, label = { Text(item) })
-            }
-        }
+        SectionTitle("Sales history & receipts", "Reprint completed sales or save PDF receipts")
         Spacer(Modifier.height(8.dp))
-        if (filtered.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(if (filter == "Open queue") "All orders served. Great work!" else "No sales yet.", color = Cocoa)
+        if (sales.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No sales yet. Completed checkouts will appear here.", color = Cocoa)
         } else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(filtered, key = { it.id }) { s ->
+            items(sales, key = { it.id }) { sale ->
                 Surface(color = Color.White, shape = RoundedCornerShape(18.dp)) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                        Row(Modifier.clickable { onSelect(s) }, verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(s.receiptNo, fontWeight = FontWeight.Bold)
-                                Text(dateTime(s.createdAt), color = Cocoa, fontSize = 12.sp)
-                                Text("${s.service} • ${s.payment}", color = Cocoa, fontSize = 12.sp)
-                            }
-                            Text(peso(s.total.toLong()), fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
-                            Text("  ›", fontSize = 24.sp)
+                    Row(Modifier.fillMaxWidth().clickable { onSelect(sale) }.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(sale.receiptNo, fontWeight = FontWeight.Bold)
+                            Text(dateTime(sale.createdAt), color = Cocoa, fontSize = 12.sp)
+                            Text("${sale.service} • ${sale.payment}", color = Cocoa, fontSize = 12.sp)
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("● ${s.status}", color = if (s.status == "Served") Leaf else Coffee,
-                                fontSize = 12.sp, modifier = Modifier.weight(1f))
-                            if (s.status != "Served") {
-                                OutlinedButton(onClick = { onNextStatus(s) }, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-                                    Text(when (s.status) { "Queued" -> "Start preparing"; "Preparing" -> "Mark ready"; else -> "Mark served" }, fontSize = 11.sp)
-                                }
-                            }
-                        }
+                        Text(peso(sale.total.toLong()), fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("  ›", fontSize = 24.sp)
                     }
                 }
             }
@@ -668,7 +645,7 @@ private fun MenuView(products: List<Product>, onAdd: () -> Unit, onEdit: (Produc
                                 if (!p.active) TextButton(onClick = { onRestore(p) }, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Restore") }
                                 else {
                                     TextButton(onClick = { onEdit(p) }, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Edit") }
-                                    TextButton(onClick = { archiveCandidate = p }, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Archive", color = Color(0xFFAD4B3C)) }
+                                    TextButton(onClick = { archiveCandidate = p }, contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Delete", color = Color(0xFFAD4B3C)) }
                                 }
                             }
                         }
@@ -678,9 +655,9 @@ private fun MenuView(products: List<Product>, onAdd: () -> Unit, onEdit: (Produc
         }
     }
     archiveCandidate?.let { p ->
-        AlertDialog(onDismissRequest = { archiveCandidate = null }, title = { Text("Archive ${p.name}?") },
-            text = { Text("The product will be hidden from new orders. Existing sales and receipt records will remain unchanged.") },
-            confirmButton = { TextButton(onClick = { onArchive(p); archiveCandidate = null }) { Text("Archive") } },
+        AlertDialog(onDismissRequest = { archiveCandidate = null }, title = { Text("Delete ${p.name}?") },
+            text = { Text("Remove this product from the sell screen? Sales, receipt history and inventory records stay intact. You can restore it later.") },
+            confirmButton = { TextButton(onClick = { onArchive(p); archiveCandidate = null }) { Text("Delete product") } },
             dismissButton = { TextButton(onClick = { archiveCandidate = null }) { Text("Cancel") } })
     }
 }
@@ -769,8 +746,8 @@ private fun Metric(title: String, number: String, caption: String) {
 
 @Composable
 private fun SettingsView(initialName: String, initialFooter: String, initialMac: String,
-                         initialWidth: Int, initialCut: Boolean, initialAutoBoth: Boolean,
-                         onSave: (String, String, String, Int, Boolean, Boolean) -> Unit,
+                         initialWidth: Int, initialCut: Boolean,
+                         onSave: (String, String, String, Int, Boolean) -> Unit,
                          onRequestPermission: () -> Unit, onExport: () -> Unit) {
     val context = LocalContext.current
     var shop by remember(initialName) { mutableStateOf(initialName) }
@@ -778,7 +755,6 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
     var mac by remember(initialMac) { mutableStateOf(initialMac) }
     var width by remember(initialWidth) { mutableIntStateOf(initialWidth) }
     var cut by remember(initialCut) { mutableStateOf(initialCut) }
-    var autoBoth by remember(initialAutoBoth) { mutableStateOf(initialAutoBoth) }
     var printerMenu by remember { mutableStateOf(false) }
     var deviceRefresh by remember { mutableIntStateOf(0) }
     val permitted = ThermalPrinter.permissionGranted(context)
@@ -819,19 +795,17 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
                 }
                 HorizontalDivider()
                 Text("ONE-PRINTER WORKFLOW", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = autoBoth, onCheckedChange = { autoBoth = it })
-                    Text("Auto-print customer receipt, then barista slip after checkout", fontSize = 12.sp)
-                }
+                Text("Auto-print ON: customer receipt + barista slip after every successful sale.", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Leaf)
+                Text("Pair/select one Bluetooth printer and grant Nearby Devices permission. If printing fails, the sale stays saved and can be reprinted from Sales History.", fontSize = 12.sp, color = Cocoa)
                 Text("Both use the printer above. With an auto-cutter, each slip is cut separately; otherwise tear along the separator. No drink prices appear on the barista slip.", fontSize = 11.sp, color = Cocoa)
-                Button(onClick = { onSave(shop, footer, mac, width, cut, autoBoth) }, modifier = Modifier.fillMaxWidth()) { Text("Save settings") }
+                Button(onClick = { onSave(shop, footer, mac, width, cut) }, modifier = Modifier.fillMaxWidth()) { Text("Save settings") }
             }
         }
         Spacer(Modifier.height(15.dp))
         OutlinedButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Export sales summary (CSV)") }
         Text("CSV amounts are in centavos. Keep exports in a safe location; CSV is not a full database backup.", color = Cocoa, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
-        Text("BrewPOS v1.1 • One-printer customer + barista slips • Android 8.0+", color = Cocoa, fontSize = 12.sp)
+        Text("BrewPOS v2.2 • Auto-print after checkout • Android 8.0+", color = Cocoa, fontSize = 12.sp)
         Text("Payments named GCash, Maya, and Card are manually recorded. This app does not capture payments through any gateway.", color = Cocoa, fontSize = 12.sp)
         Text("Local data is not yet backed up or synchronized across devices. Do not clear app storage without exporting your records.", color = Color(0xFFAE4C37), fontSize = 12.sp)
     }
@@ -869,7 +843,7 @@ private fun ReceiptDialog(sale: Sale, lines: List<SaleLine>, shopName: String,
                 }
                 Spacer(Modifier.height(6.dp))
                 Button(onClick = onBoth, modifier = Modifier.fillMaxWidth(), enabled = !isPrinting) {
-                    Text(if (isPrinting) "Printing on 1 printer..." else "Print BOTH • 1 Printer")
+                    Text(if (isPrinting) "Printing on 1 printer..." else "Reprint BOTH • 1 Printer")
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     OutlinedButton(onClick = onCustomer, modifier = Modifier.weight(1f), enabled = !isPrinting) {
