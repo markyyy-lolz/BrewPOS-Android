@@ -52,33 +52,7 @@ async function owner(action,more={}) {
 }
 function clearSession() {
   jwt=null;expiresAt=0;
-  el("accountCreateForm").addEventListener("submit",async event=>{
-  event.preventDefault();status("");
-  const button=el("accountCreateButton");button.disabled=true;
-  try {
-    const email=el("accountEmail").value.trim();
-    const license_issue_id=el("accountIssue").value;
-    if(!email||!license_issue_id)throw Error("Choose an email and issued license.");
-    const result=await owner("provision_customer",{email,license_issue_id});
-    el("accountCreateForm").reset();
-    status("Client invitation requested for "+result.email+". Check configured SMTP and inbox.","success");
-    await loadTab();
-  } catch(e) {status(e.message||"Client invitation failed","error");}
-  finally {button.disabled=false;}
-});
-el("accountPlanForm").addEventListener("submit",async event=>{
-  event.preventDefault();status("");
-  const button=el("accountUpdateButton");button.disabled=true;
-  try {
-    const account_id=el("accountToEdit").value,license_issue_id=el("accountReplacementIssue").value;
-    if(!account_id||!license_issue_id)throw Error("Choose the customer and new purchased license.");
-    const result=await owner("change_customer_license",{account_id,license_issue_id});
-    status("Account "+result.email+" now uses "+result.plan+". Send the new signed BP1 code to their tablet.","success");
-    await loadTab();
-  } catch(e) {status(e.message||"Plan update failed","error");}
-  finally {button.disabled=false;}
-});
-setSignedIn(false);
+  setSignedIn(false);
   loginError("");
   // No JWT or password is stored in browser localStorage/sessionStorage.
 }
@@ -229,5 +203,31 @@ el("copyCode").addEventListener("click",async()=>{
  if(!code)return;
  try{await navigator.clipboard.writeText(code);status("Activation code copied. Share it securely.","success");}
  catch {el("generatedCode").select();status("Select and manually copy the highlighted activation code.","info");}
+});
+el("accountCreateForm").addEventListener("submit",async event=>{
+  event.preventDefault();status("");
+  const button=el("accountCreateButton");button.disabled=true;
+  try {
+    const email=el("accountEmail").value.trim();
+    const license_issue_id=el("accountIssue").value;
+    if(!email||!license_issue_id)throw Error("Choose an email and issued license.");
+    const result=await owner("provision_customer",{email,license_issue_id});
+    el("accountCreateForm").reset();
+    status("Client invitation requested for "+result.email+". Check configured SMTP and inbox.","success");
+    await loadTab();
+  } catch(e) {status(e.message||"Client invitation failed","error");}
+  finally {button.disabled=false;}
+});
+el("accountPlanForm").addEventListener("submit",async event=>{
+  event.preventDefault();status("");
+  const button=el("accountUpdateButton");button.disabled=true;
+  try {
+    const account_id=el("accountToEdit").value,license_issue_id=el("accountReplacementIssue").value;
+    if(!account_id||!license_issue_id)throw Error("Choose the customer and new purchased license.");
+    const result=await owner("change_customer_license",{account_id,license_issue_id});
+    status("Account "+result.email+" now uses "+result.plan+". Send the new signed BP1 code to their tablet.","success");
+    await loadTab();
+  } catch(e) {status(e.message||"Plan update failed","error");}
+  finally {button.disabled=false;}
 });
 setSignedIn(false);
