@@ -83,7 +83,8 @@ function switchTab(tab) {
     overview:["Overview","Your workspace","Live data from your dedicated BrewPOS Supabase project."],
     activation:["Activation generator","Generate a license","Signed activation codes bound to one Android Device ID."],
     licenses:["Issued licenses","Issuance history","Audit log of generated activations (no plaintext codes stored)."],
-    accounts:["Client accounts","Customer onboarding","Invite customers and edit the plan according to their purchased signed license."],
+    approvals:["Client approvals","Approve Cloud POS clients","Authorize verified accounts without device-bound offline licenses."],
+    accounts:["Client accounts","Customer onboarding","Cloud account status, optional BP1 onboarding and plan management."],
     devices:["Devices","Registered tablets","Cloud device registrations and their last reported activity."],
     sales:["Cloud sales","Synchronized transactions","Read-only sales received by BrewPOS Cloud."]
   };
@@ -125,6 +126,71 @@ function fillOptions(id,items,valueOf,labelOf,placeholder) {
   }
   if(items.some(x=>String(valueOf(x))===current))select.value=current;
 }
+
+function cloudAction(label,handler){
+  const b=document.createElement("button");
+  b.type="button";b.className="outline";b.textContent=label;
+  b.addEventListener("click",async()=>{
+    b.disabled=true;
+    try{const done=await handler();if(done!==false)await loadTab();}
+    catch(e){status(e.message||"Cloud approval failed","error")}
+    finally{b.disabled=false}
+  });
+  return b;
+}
+async function renderCloudApprovals(){
+  const response=await owner("signup_requests");
+  const pending=(response.requests||[]).filter(r=>r.status==="pending");
+  el("pendingCount").textContent=String(pending.length);
+  const body=el("approvalRows");body.replaceChildren();
+  if(!pending.length){
+    setCells("approvalRows",[],[()=>"",()=>"",()=>"",()=>"",()=>"",()=>""],
+      "No pending email-verified registrations.");
+    return;
+  }
+  for(const entry of pending){
+    const tr=document.createElement("tr");
+    for(const value of [entry.business_name,entry.email,entry.android_device_id,date(entry.requested_at)]){
+      const td=document.createElement("td");td.textContent=String(value??"—");tr.append(td);
+    }
+    const plan=document.createElement("select");
+    plan.setAttribute("aria-label","Select Cloud POS plan for "+entry.email);
+    for(const [value,label] of [["TRIAL","Trial · 7 days"],["MONTHLY","Monthly · 30 days"],["LIFETIME","Lifetime"]]){
+      const option=document.createElement("option");option.value=value;option.textContent=label;plan.append(option);
+    }
+    const planTd=document.createElement("td");planTd.append(plan);tr.append(planTd);
+    const actions=document.createElement("td");actions.className="review-actions";
+    actions.append(cloudAction("✓ Approve",async()=>{
+      if(!confirm("Approve "+entry.email+" for "+plan.value+" Cloud POS?"))return false;
+      const r=await owner("approve_cloud_signup",{user_id:entry.user_id,plan:plan.value});
+      status("Approved "+r.email+" for Cloud POS. Client may sign in with an email code.","success");
+      return true;
+    }),cloudAction("Reject",async()=>{
+      if(!confirm("Reject "+entry.email+"?"))return false;
+      await owner("reject_cloud_signup",{user_id:entry.user_id});
+      status("Registration rejected.","success");
+      return true;
+    }));
+    tr.append(actions);body.append(tr);
+  }
+}
+function renderCloudStatusButtons(accounts){
+  const body=el("accountRows");
+  [...body.querySelectorAll("tr")].forEach((tr,index)=>{
+    const row=accounts[index];
+    if(!row)return;
+    const td=document.createElement("td");
+    if(row.status==="active"||row.status==="suspended")
+      td.append(cloudAction(row.status==="active"?"Suspend":"Reactivate",async()=>{
+        const next=row.status==="active"?"suspended":"active";
+        if(!confirm("Set "+row.email+" to "+next+"?"))return false;
+        await owner("set_cloud_account_status",{account_id:row.id,status:next});
+        status("Updated Cloud account to "+next+".","success");return true;
+      }));
+    tr.append(td);
+  });
+}
+
 async function loadTab() {
   if(busy)return;
   busy=true;
@@ -139,6 +205,10 @@ async function loadTab() {
       el("activeDeviceCount").textContent=String(d.active_devices??0)+" active devices";
       el("licenseCount").textContent=String(d.issued_licenses??0);
       el("orgCount").textContent=String(d.organization_count??0);
+      const approvals=await owner("signup_requests");
+      el("pendingCount").textContent=String((approvals.requests||[]).filter(r=>r.status==="pending").length);
+    } else if(currentTab==="approvals"){
+      await renderCloudApprovals();
     } else if(currentTab==="licenses") {
       const data=await owner("licenses");
       setCells("licensesRows",data.licenses||[],[
@@ -160,7 +230,8 @@ async function loadTab() {
       const issues=licenses.licenses||[], accounts=customers.accounts||[];
       setCells("accountRows",accounts,[
         x=>x.email,x=>x.plan,x=>date(x.expires_at),x=>x.status,x=>date(x.created_at)
-      ],"No client cloud accounts. First issue a signed activation, then invite a customer.");
+      ],"No client cloud accounts yet. Cloud-only accounts can be approved without signed offline keys.");
+      renderCloudStatusButtons(accounts);
       const activeIssues=issues.filter(x=>!x.expires_at||new Date(x.expires_at).getTime()>Date.now());
       const used=new Set(accounts.map(x=>x.license_issue_id));
       fillOptions("accountIssue",activeIssues.filter(x=>!used.has(x.id)),
