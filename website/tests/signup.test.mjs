@@ -133,7 +133,7 @@ test("server accepts legitimate business names and rejects only real control cha
   const disallowed=new RegExp(capture[1]);
   for(const name of ["Punong Tulay","Brew & Bean Coffee","Shirene Store","Milk Tea","Silogan"])
     assert.equal(disallowed.test(name),false,"Unexpected rejection: "+name);
-  for(const name of ["Bad|Name","Bad\\nName","Bad\\tName","Bad\\u0000Name"])
+  for(const name of ["Bad|Name","Bad\nName","Bad\tName","Bad\u0000Name"])
     assert.equal(disallowed.test(name),true,"Must block invalid value");
   assert.equal(source.includes(String.raw`/[|\\\\u0000-\\\\u001f\\\\u007f]/`),false,
     "double-escaped unicode ranges cause all business names to be rejected");
