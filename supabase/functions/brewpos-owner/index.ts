@@ -50,17 +50,23 @@ async function rows(path: string): Promise<Record<string, unknown>[]> {
   return data;
 }
 async function checkedOwner(req: Request): Promise<string | null> {
-  if (!uuid(ownerId)) return null;
   const token = req.headers.get("Authorization")?.match(/^Bearer ([A-Za-z0-9._-]+)$/)?.[1];
   if (!token) return null;
+  // Verify token with Supabase Auth; never trust email, role or UID supplied in JSON.
   const r = await fetch(base + "/auth/v1/user", {
     headers: { "apikey": serviceKey, "authorization": "Bearer " + token },
     cache: "no-store"
   });
   if (!r.ok) return null;
   const user = await r.json();
-  // Do not use editable user_metadata to grant privileges.
-  return user.id === ownerId && user.email_confirmed_at ? ownerId : null;
+  if (!uuid(user?.id) || !user?.email_confirmed_at) return null;
+  // Backward-compatible legacy explicit owner UUID; never elevate based on email text.
+  if (uuid(ownerId) && user.id === ownerId) return user.id;
+  // Private allowlist: only service_role can query this table, and the signed-in
+  // Auth principal must have a matching ACTIVE UUID entry. A failed lookup denies.
+  const matches = await rows("brew_owner_accounts?select=user_id&user_id=eq."+
+    user.id+"&is_active=eq.true&limit=1");
+  return matches.length === 1 && matches[0].user_id === user.id ? user.id : null;
 }
 function integerCentavos(v: unknown): number {
   const n = Number(v);
@@ -282,7 +288,7 @@ Deno.serve(async req => {
   if (origin && !allowed.has(origin)) return answer(req,403,{error:"Origin not allowed"});
   if (req.method === "OPTIONS") return new Response(null,{status:204,headers:cors(req)});
   if (req.method !== "POST") return answer(req,405,{error:"POST required"});
-  if (!base || !serviceKey || !uuid(ownerId)) return answer(req,503,{error:"Owner console is not configured"});
+  if (!base || !serviceKey) return answer(req,503,{error:"Owner console is not configured"});
   const userId = await checkedOwner(req).catch(()=>null);
   if (!userId) return answer(req,403,{error:"Azurate owner access required"});
   const raw = await req.text();
