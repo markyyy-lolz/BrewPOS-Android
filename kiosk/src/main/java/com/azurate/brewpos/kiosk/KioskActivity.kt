@@ -231,7 +231,7 @@ private fun CustomerKiosk(){
                     Text(if(loading)"Connecting to café…"else"Start ordering  →",
                         fontWeight=FontWeight.Bold,fontSize=17.sp)
                 }
-                if(menu.isEmpty())OutlinedButton(onClick={load},enabled=!loading,
+                if(menu.isEmpty())OutlinedButton(onClick={load()},enabled=!loading,
                     modifier=Modifier.fillMaxWidth()){Text("Refresh menu")}
                 Text("Browse the menu, customize your drink and choose how to pay.",
                     color=Bean,fontSize=12.sp,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
