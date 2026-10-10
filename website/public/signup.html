@@ -30,7 +30,8 @@
 <label>Android Device ID<input id="device" pattern="[A-Fa-f0-9]{16}" maxlength="16" minlength="16" spellcheck="false" autocapitalize="off" placeholder="16-character ID from BrewPOS app" required></label>
 <div id="verification" hidden>
 <label>One-time email code<input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit code"></label>
-<p class="subtle">Enter the code from your email. Request a new code if it expires.</p>
+<p class="subtle">Enter the six-digit code from your email. If you received a confirmation link instead, request another code after Azurate updates the email templates.</p>
+<button id="resend" class="outline full" type="button">Resend 6-digit code</button>
 </div>
 <button id="submit" type="submit" class="primary full">Send verification code →</button>
 <p id="feedback" role="status" aria-live="polite" class="subtle"></p>
