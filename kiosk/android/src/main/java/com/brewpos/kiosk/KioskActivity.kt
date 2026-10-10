@@ -93,7 +93,7 @@ class KioskActivity : Activity() {
         val hint=TextView(this).apply{text="Staff-only setup. Pair this device to an approved café LAN hub. Requires trusted HTTPS certificate.";textSize=14f}
         root.addView(hint)
         fun field(label:String,value:String=""):EditText{
-            val x=EditText(this).apply{hint=label;setText(value);setSingleLine(true)}
+            val x=EditText(this).apply{this.hint=label;setText(value);setSingleLine(true)}
             root.addView(x);return x
         }
         val address=field("LAN Hub HTTPS URL (e.g. https://192.168.1.15:8443)")
