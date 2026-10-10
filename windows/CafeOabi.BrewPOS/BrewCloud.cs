@@ -39,7 +39,7 @@ public sealed class BrewCloud {
         var refresh=auth.GetProperty("refresh_token").GetString()!;
         var user=auth.GetProperty("user").GetProperty("id").GetGuid();
         var expiry=auth.GetProperty("expires_in").GetInt64();
-        return new TokenSession(access,refresh,DateTimeOffset.UtcNow.AddSeconds(Math.Max(60,expiry)));
+        return new TokenSession(access,refresh,DateTimeOffset.UtcNow.AddSeconds(Math.Max(60,expiry)),user);
     }
     public async Task<TokenSession> Login(string email,string password) {
         if(string.IsNullOrWhiteSpace(email)||string.IsNullOrWhiteSpace(password))
