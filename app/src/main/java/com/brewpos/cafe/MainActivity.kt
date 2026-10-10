@@ -518,6 +518,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 })
                 "Reports" -> ReportsView(db, allSales)
                 "Settings" -> SettingsView(shopName, footer, printerMac, baristaMac, kitchenMac, printerWidth, autoCut, autoPrintBoth,
+                    accessMode,db.binding()!=null,db.pendingSyncCount(),allSales.size,
                     onSave = { newName, newFooter, mac, barista, kitchen, width, cut, autoBoth ->
                         shopName = newName.ifBlank { "Coffee Shop" }; footer = newFooter
                         printerMac = mac; baristaMac = barista; kitchenMac = kitchen
@@ -530,7 +531,30 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                     }, onRequestPermission = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                             requestNearby.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                    }, onExport = { exportCsv.launch("brewpos-sales.csv") })
+                    }, onExport = { exportCsv.launch("brewpos-sales.csv") },
+                    onManageAccess=onManageLicense,onCloud={tab="Cloud"},
+                    onSync={
+                        scope.launch{
+                            runCatching{BrewCloud.uploadPending(context)}
+                                .onSuccess{alert("Synced "+it+" local events. Cloud menu refreshed.");refresh()}
+                                .onFailure{alert(it.message?:"Cloud sync unavailable; local sales kept")}
+                        }
+                    },onTestPrinter={address,label->
+                        if(!ThermalPrinter.permissionGranted(context)){
+                            if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S)
+                                requestNearby.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                            alert("Enable Nearby Devices permission first")
+                        }else if(address.isBlank())alert("Assign the "+label+" printer first")
+                        else scope.launch{
+                            val bytes=byteArrayOf(27,64)+
+                                ("BREWPOS TEST TICKET\n"+label+" PRINTER\n"+
+                                    "This is not a customer receipt.\n\n\n")
+                                    .toByteArray(Charsets.UTF_8)
+                            ThermalPrinter.print(context,address,bytes)
+                                .onSuccess{alert(label+" test sent. Confirm paper printed.")}
+                                .onFailure{alert(label+" printer error: "+it.message)}
+                        }
+                    })
             }
             }
         }
@@ -1003,8 +1027,11 @@ private fun Metric(title: String, number: String, caption: String) {
 private fun SettingsView(initialName: String, initialFooter: String, initialMac: String,
                          initialBaristaMac: String, initialKitchenMac: String,
                          initialWidth: Int, initialCut: Boolean, initialAutoBoth: Boolean,
+                         accessMode:String,branchLinked:Boolean,pendingEvents:Int,saleCount:Int,
                          onSave: (String, String, String, String, String, Int, Boolean, Boolean) -> Unit,
-                         onRequestPermission: () -> Unit, onExport: () -> Unit) {
+                         onRequestPermission: () -> Unit, onExport: () -> Unit,
+                         onManageAccess:()->Unit,onCloud:()->Unit,onSync:()->Unit,
+                         onTestPrinter:(String,String)->Unit) {
     val context = LocalContext.current
     var shop by remember(initialName) { mutableStateOf(initialName) }
     var footer by remember(initialFooter) { mutableStateOf(initialFooter) }
@@ -1018,7 +1045,41 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
     val permitted = ThermalPrinter.permissionGranted(context)
     val paired = remember(deviceRefresh, permitted) { ThermalPrinter.paired(context) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        SectionTitle("Shop settings", "Personalize your café and route multiple ESC/POS printers")
+        SectionTitle("Shop settings", "Café operations, accounts, sync, and printers")
+        Surface(color=Color.White,shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){
+                Text("ACCOUNT & SUBSCRIPTION",color=Leaf,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                Text(if(accessMode=="cloud")"☁  Cloud POS account"else"🔑  Offline device license",
+                    fontWeight=FontWeight.Black,fontSize=20.sp,color=Coffee)
+                Text(if(branchLinked)"Branch device registered"else"Cloud branch not linked",
+                    color=Cocoa,fontSize=12.sp)
+                Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){
+                    OutlinedButton(onClick=onManageAccess,modifier=Modifier.weight(1f)){
+                        Text("Change access mode",fontSize=12.sp)
+                    }
+                    OutlinedButton(onClick=onCloud,modifier=Modifier.weight(1f)){
+                        Text("Cloud account",fontSize=12.sp)
+                    }
+                }
+                HorizontalDivider(color=Pale)
+                Text("SYNC & LOCAL DATA",color=Leaf,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                Row(horizontalArrangement=Arrangement.SpaceBetween,modifier=Modifier.fillMaxWidth()){
+                    Text("Pending sync events",fontSize=13.sp,color=Cocoa)
+                    Text(pendingEvents.toString(),fontWeight=FontWeight.Bold,color=Coffee)
+                }
+                Row(horizontalArrangement=Arrangement.SpaceBetween,modifier=Modifier.fillMaxWidth()){
+                    Text("Local receipts",fontSize=13.sp,color=Cocoa)
+                    Text(saleCount.toString(),fontWeight=FontWeight.Bold,color=Coffee)
+                }
+                Button(enabled=branchLinked&&BrewCloud.signedIn(context),
+                    onClick=onSync,modifier=Modifier.fillMaxWidth()){
+                    Text("Sync now & refresh menu")
+                }
+                Text("Offline records stay on this tablet until individually acknowledged by BrewPOS Cloud.",
+                    color=Cocoa,fontSize=11.sp)
+            }
+        }
+        Spacer(Modifier.height(14.dp))
         Surface(color = Color.White, shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("STORE PROFILE", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -1033,6 +1094,18 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
                     PrinterChoice("Barista slip printer (blank = receipt printer)", barista, paired, optional = true) { barista = it }
                     PrinterChoice("Kitchen printer (optional)", kitchen, paired, optional = true) { kitchen = it }
                     TextButton(onClick = { deviceRefresh++ }) { Text("Refresh paired devices") }
+                    OutlinedButton(onClick={onTestPrinter(mac,"Customer receipt")},
+                        modifier=Modifier.fillMaxWidth(),enabled=mac.isNotBlank()){
+                        Text("🧾  Test customer receipt printer")
+                    }
+                    OutlinedButton(onClick={onTestPrinter(barista.ifBlank{mac},"Barista")},
+                        modifier=Modifier.fillMaxWidth(),enabled=(barista.ifBlank{mac}).isNotBlank()){
+                        Text("☕  Test barista printer")
+                    }
+                    OutlinedButton(onClick={onTestPrinter(kitchen,"Kitchen")},
+                        modifier=Modifier.fillMaxWidth(),enabled=kitchen.isNotBlank()){
+                        Text("🍳  Test kitchen printer")
+                    }
                 }
                 Text("Receipt width", fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -1057,9 +1130,9 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
         OutlinedButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Export sales summary (CSV)") }
         Text("CSV amounts are in centavos. Keep exports in a safe location; CSV is not a full database backup.", color = Cocoa, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
-        Text("BrewPOS Android • Multi-printer routing + Kiosk Orders queue • Android 8.0+", color = Cocoa, fontSize = 12.sp)
+        Text("BrewPOS Android • Account mode + Multi-printer + Kiosk queue • Android 8.0+", color = Cocoa, fontSize = 12.sp)
         Text("Payments named GCash, Maya, and Card are manually recorded. This app does not capture payments through any gateway.", color = Cocoa, fontSize = 12.sp)
-        Text("Local data is not yet backed up or synchronized across devices. Do not clear app storage without exporting your records.", color = Color(0xFFAE4C37), fontSize = 12.sp)
+        Text("Exporting CSV is not a full backup. Do not clear app data or reinstall before backing up local receipts and queued sync events.", color = Color(0xFFAE4C37), fontSize = 12.sp)
     }
 }
 
