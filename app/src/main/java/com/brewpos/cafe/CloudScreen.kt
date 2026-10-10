@@ -83,9 +83,9 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
                         }
                     },modifier=Modifier.fillMaxWidth()) { Text("Send email sign-in code") }
                     if(codeSent) {
-                        OutlinedTextField(otp,{ otp=it.filter(Char::isDigit).take(8) },
+                        OutlinedTextField(otp,{ otp=it.filter(Char::isDigit).take(6) },
                             label={Text("Email verification code")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                        Button(enabled=!busy&&otp.length in 6..8,onClick={
+                        Button(enabled=!busy&&otp.length == 6,onClick={
                             busy=true
                             scope.launch {
                                 runCatching { BrewCloud.loginWithCode(ctx,email,otp) }
