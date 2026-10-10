@@ -213,7 +213,7 @@ el("accountCreateForm").addEventListener("submit",async event=>{
     if(!email||!license_issue_id)throw Error("Choose an email and issued license.");
     const result=await owner("provision_customer",{email,license_issue_id});
     el("accountCreateForm").reset();
-    status("Client invitation requested for "+result.email+". Check configured SMTP and inbox.","success");
+    status("Client account created for "+result.email+". Tell them to open BrewPOS Android → Cloud and request an email sign-in code.","success");
     await loadTab();
   } catch(e) {status(e.message||"Client invitation failed","error");}
   finally {button.disabled=false;}
