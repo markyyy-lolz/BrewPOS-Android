@@ -1,0 +1,35 @@
+<Window x:Class="BrewPOS.Kiosk.Windows.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+ Title="BrewPOS Self Order / Kitchen" Width="1450" Height="900" MinWidth="1050" MinHeight="720"
+ WindowStartupLocation="CenterScreen" Background="#F6F8F4">
+ <Grid>
+  <wv:WebView2 x:Name="Browser" Visibility="Collapsed"/>
+  <Grid x:Name="Setup" Background="#ECF4EC">
+   <Border Background="White" BorderBrush="#D7E5D8" BorderThickness="1"
+     Padding="34" Width="540" VerticalAlignment="Center" HorizontalAlignment="Center" CornerRadius="18">
+    <StackPanel>
+     <TextBlock Text="☕ BrewPOS Device Setup" FontSize="27" FontWeight="Bold" Foreground="#235E42"/>
+     <TextBlock Text="Pair this kiosk, cashier queue, or kitchen display with a trusted HTTPS LAN hub."
+       Margin="0,9,0,22" TextWrapping="Wrap" Foreground="#607A68"/>
+     <TextBlock Text="Approved café HTTPS LAN hub URL" FontWeight="SemiBold"/>
+     <TextBox x:Name="HubUrl" Height="36" Margin="0,5,0,12" Text="https://"/>
+     <TextBlock Text="Branch display name" FontWeight="SemiBold"/>
+     <TextBox x:Name="BranchName" Height="36" Margin="0,5,0,12"/>
+     <TextBlock Text="Device role" FontWeight="SemiBold"/>
+     <ComboBox x:Name="Role" Height="38" SelectedIndex="0" Margin="0,5,0,12">
+      <ComboBoxItem Content="kiosk"/><ComboBoxItem Content="cashier"/><ComboBoxItem Content="kitchen"/>
+     </ComboBox>
+     <TextBlock Text="Approved device pairing key (hidden)" FontWeight="SemiBold"/>
+     <PasswordBox x:Name="PairingKey" Height="38" Margin="0,5,0,16"/>
+     <Button x:Name="PairButton" Content="Verify hub and pair this device" Click="Pair_Click"
+       Height="50" Background="#246549" Foreground="White" FontWeight="SemiBold"/>
+     <TextBlock x:Name="SetupError" Foreground="#B3444D" Margin="0,14,0,0" TextWrapping="Wrap"/>
+     <TextBlock Text="LAN hub requires TLS. Do not paste service_role, payment-provider, or staff account keys here."
+       Foreground="#829C89" FontSize="11" Margin="0,20,0,0" TextWrapping="Wrap"/>
+    </StackPanel>
+   </Border>
+  </Grid>
+ </Grid>
+</Window>
