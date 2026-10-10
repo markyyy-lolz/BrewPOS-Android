@@ -19,33 +19,60 @@ import androidx.compose.ui.unit.sp
 
 private val Espresso = Color(0xFF30241D)
 private val Muted = Color(0xFF756458)
-private val Sage = Color(0xFF4E775F)
+private val Sage = Color(0xFF254D3B)
 
 @Composable
 fun BrewSidebar(selected: String, onSelect: (String) -> Unit) {
+    val wide=androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp>=1000
     Column(
-        Modifier.width(116.dp).fillMaxHeight().background(Espresso).padding(horizontal = 10.dp, vertical = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(9.dp)
-    ) {
-        Text("☕", fontSize = 31.sp)
-        Text("BREWPOS", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black)
-        Spacer(Modifier.height(18.dp))
-        listOf("Dashboard" to "▦", "POS" to "☕", "Orders" to "▤",
-            "Menu" to "☰", "Reports" to "▥", "Cloud" to "☁", "Settings" to "⚙").forEach { (key, icon) ->
-            val chosen = selected == key
-            Column(
+        Modifier.width(if(wide)178.dp else 135.dp).fillMaxHeight()
+            .background(Color(0xFFFFFCF8)).padding(horizontal=12.dp,vertical=20.dp),
+        verticalArrangement=Arrangement.spacedBy(7.dp)
+    ){
+        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            Box(Modifier.size(37.dp).background(Color(0xFFF1E5D8),RoundedCornerShape(13.dp)),
+                contentAlignment=Alignment.Center){Text("☕",fontSize=25.sp)}
+            Column {
+                Text("BREWPOS",fontWeight=FontWeight.Black,color=Espresso,
+                    fontSize=if(wide)17.sp else 14.sp)
+                Text("POINT OF SALE",fontSize=8.sp,letterSpacing=1.1.sp,color=Muted)
+            }
+        }
+        Spacer(Modifier.height(25.dp))
+        listOf(
+            Triple("Dashboard","⌂","Dashboard"),
+            Triple("POS","🛒","Orders"),
+            Triple("Menu","☷","Menu"),
+            Triple("Kiosk","▤","Kiosk Orders"),
+            Triple("Orders","◫","Order History"),
+            Triple("Reports","▥","Reports"),
+            Triple("Cloud","☁","Cloud Sync"),
+            Triple("Settings","⚙","Settings")
+        ).forEach{(key,symbol,label)->
+            val active=selected==key
+            Row(
                 Modifier.fillMaxWidth()
-                    .background(if (chosen) Color(0xFF6A4E3E) else Color.Transparent, RoundedCornerShape(16.dp))
-                    .clickable { onSelect(key) }.padding(vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(icon, color = if (chosen) Color.White else Color(0xFFCFB7A6), fontSize = 21.sp)
-                Text(key, color = if (chosen) Color.White else Color(0xFFC9B6A6),
-                    fontSize = 10.sp, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Normal)
+                    .background(if(active) Sage else Color.Transparent,RoundedCornerShape(15.dp))
+                    .clickable{onSelect(key)}
+                    .padding(horizontal=12.dp,vertical=13.dp),
+                verticalAlignment=Alignment.CenterVertically,
+                horizontalArrangement=Arrangement.spacedBy(10.dp)
+            ){
+                Text(symbol,fontSize=17.sp,color=if(active)Color.White else Espresso)
+                Text(label,color=if(active)Color.White else Espresso,
+                    fontSize=if(wide)13.sp else 11.sp,
+                    fontWeight=if(active)FontWeight.Bold else FontWeight.Medium)
             }
         }
         Spacer(Modifier.weight(1f))
-        Text("v2 UI\nPreview", color = Color(0xFFCFB7A6), fontSize = 10.sp, textAlign = TextAlign.Center)
+        Surface(color=Color(0xFFF4EFE5),shape=RoundedCornerShape(17.dp)){
+            Column(Modifier.fillMaxWidth().padding(13.dp),
+                verticalArrangement=Arrangement.spacedBy(7.dp)){
+                Text("Good coffee.\nBrighter days.",fontSize=15.sp,
+                    lineHeight=20.sp,color=Espresso,fontWeight=FontWeight.Black)
+                Text("by Azurate Software Solutions",fontSize=9.sp,color=Muted,lineHeight=13.sp)
+            }
+        }
     }
 }
 
