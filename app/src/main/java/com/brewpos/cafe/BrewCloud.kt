@@ -129,6 +129,31 @@ object BrewCloud {
             .put("type", "email"))
         store(ctx, parseTokens(response))
     }
+    /** Customer self-registration: creates ONLY an unprivileged Supabase Auth identity. */
+    suspend fun sendRegistrationCode(email: String): Unit = withContext(Dispatchers.IO) {
+        val normalized = email.trim().lowercase()
+        require(normalized.length in 5..254 && normalized.contains("@")) { "Enter a valid email" }
+        request(BASE + "/auth/v1/otp", JSONObject()
+            .put("email", normalized)
+            .put("create_user", true))
+        Unit
+    }
+    /** Called only after OTP was verified. The server checks token/email and saves pending review. */
+    suspend fun requestAccountApproval(ctx: Context, business: String, deviceId: String): JSONObject =
+        withContext(Dispatchers.IO) {
+            val name = business.trim()
+            require(name.length in 2..80) { "Enter a business name (2-80 characters)" }
+            require(deviceId.matches(Regex("^[0-9a-fA-F]{16}$"))) { "Invalid Android device ID" }
+            request(syncPath(), JSONObject().put("action","request_account")
+                .put("business_name",name)
+                .put("android_device_id",deviceId.lowercase()), validToken(ctx))
+        }
+    suspend fun registerWithCode(ctx: Context, email: String, code: String,
+                                 business: String, deviceId: String): JSONObject {
+        // Existing loginWithCode verifies OTP and encrypts the short-lived Auth session.
+        loginWithCode(ctx,email,code)
+        return requestAccountApproval(ctx,business,deviceId)
+    }
     private fun validToken(ctx:Context):String {
         val saved=loaded(ctx) ?: throw IOException("Sign into BrewPOS Cloud first")
         if(System.currentTimeMillis()<saved.expiry)return saved.access
