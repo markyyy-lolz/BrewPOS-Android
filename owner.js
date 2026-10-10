@@ -206,14 +206,17 @@ el("sendLoginOtp").addEventListener("click",async()=>{
 });
 el("loginForm").addEventListener("submit",async event=>{
  event.preventDefault();loginError("");
+ // currentTarget is only available while dispatching the event. Capture the
+ // form before any await so successful owner OTP login cannot throw on reset().
+ const form = event.currentTarget;
  const button=el("loginButton");button.disabled=true;
- const data=new FormData(event.currentTarget);
+ const data=new FormData(form);
  try{
    await login(String(data.get("email")||""),String(data.get("code")||""));
    // The server must authorize the verified Auth user ID before any owner data is displayed.
    await owner("overview");
    setSignedIn(true);
-   event.currentTarget.reset();
+   form.reset();
    switchTab("overview");
  }catch(e){
    clearSession();
