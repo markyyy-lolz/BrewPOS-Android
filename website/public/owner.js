@@ -52,7 +52,33 @@ async function owner(action,more={}) {
 }
 function clearSession() {
   jwt=null;expiresAt=0;
-  setSignedIn(false);
+  el("accountCreateForm").addEventListener("submit",async event=>{
+  event.preventDefault();status("");
+  const button=el("accountCreateButton");button.disabled=true;
+  try {
+    const email=el("accountEmail").value.trim();
+    const license_issue_id=el("accountIssue").value;
+    if(!email||!license_issue_id)throw Error("Choose an email and issued license.");
+    const result=await owner("provision_customer",{email,license_issue_id});
+    el("accountCreateForm").reset();
+    status("Client invitation requested for "+result.email+". Check configured SMTP and inbox.","success");
+    await loadTab();
+  } catch(e) {status(e.message||"Client invitation failed","error");}
+  finally {button.disabled=false;}
+});
+el("accountPlanForm").addEventListener("submit",async event=>{
+  event.preventDefault();status("");
+  const button=el("accountUpdateButton");button.disabled=true;
+  try {
+    const account_id=el("accountToEdit").value,license_issue_id=el("accountReplacementIssue").value;
+    if(!account_id||!license_issue_id)throw Error("Choose the customer and new purchased license.");
+    const result=await owner("change_customer_license",{account_id,license_issue_id});
+    status("Account "+result.email+" now uses "+result.plan+". Send the new signed BP1 code to their tablet.","success");
+    await loadTab();
+  } catch(e) {status(e.message||"Plan update failed","error");}
+  finally {button.disabled=false;}
+});
+setSignedIn(false);
   loginError("");
   // No JWT or password is stored in browser localStorage/sessionStorage.
 }
@@ -61,6 +87,7 @@ function switchTab(tab) {
     overview:["Overview","Your workspace","Live data from your dedicated BrewPOS Supabase project."],
     activation:["Activation generator","Generate a license","Signed activation codes bound to one Android Device ID."],
     licenses:["Issued licenses","Issuance history","Audit log of generated activations (no plaintext codes stored)."],
+    accounts:["Client accounts","Customer onboarding","Invite customers and edit the plan according to their purchased signed license."],
     devices:["Devices","Registered tablets","Cloud device registrations and their last reported activity."],
     sales:["Cloud sales","Synchronized transactions","Read-only sales received by BrewPOS Cloud."]
   };
@@ -90,6 +117,18 @@ function setCells(bodyId,rows,keys,empty) {
     target.append(tr);
   }
 }
+function fillOptions(id,items,valueOf,labelOf,placeholder) {
+  const select=el(id), current=select.value;
+  select.replaceChildren();
+  const first=document.createElement("option");
+  first.value=""; first.textContent=placeholder; select.append(first);
+  for(const item of items) {
+    const option=document.createElement("option");
+    option.value=String(valueOf(item)); option.textContent=String(labelOf(item));
+    select.append(option);
+  }
+  if(items.some(x=>String(valueOf(x))===current))select.value=current;
+}
 async function loadTab() {
   if(busy)return;
   busy=true;
@@ -110,6 +149,21 @@ async function loadTab() {
         x=>x.customer_name,x=>x.android_device_id,x=>x.plan,
         x=>date(x.expires_at),x=>date(x.issued_at)
       ],"No activation codes have been issued yet.");
+    } else if(currentTab==="accounts") {
+      const [licenses,customers]=await Promise.all([owner("licenses"),owner("accounts")]);
+      const issues=licenses.licenses||[], accounts=customers.accounts||[];
+      setCells("accountRows",accounts,[
+        x=>x.email,x=>x.plan,x=>date(x.expires_at),x=>x.status,x=>date(x.created_at)
+      ],"No client cloud accounts. First issue a signed activation, then invite a customer.");
+      const activeIssues=issues.filter(x=>!x.expires_at||new Date(x.expires_at).getTime()>Date.now());
+      const used=new Set(accounts.map(x=>x.license_issue_id));
+      fillOptions("accountIssue",activeIssues.filter(x=>!used.has(x.id)),
+        x=>x.id,x=>x.customer_name+" — "+x.plan+" — "+x.android_device_id,
+        "Select issued BP1 activation");
+      fillOptions("accountToEdit",accounts,x=>x.id,x=>x.email+" — "+x.plan,"Select account");
+      fillOptions("accountReplacementIssue",activeIssues.filter(x=>!used.has(x.id)),
+        x=>x.id,x=>x.customer_name+" — "+x.plan+" — "+x.android_device_id,
+        "Select replacement activation");
     } else if(currentTab==="devices") {
       const data=await owner("devices");
       setCells("devicesRows",data.devices||[],[
