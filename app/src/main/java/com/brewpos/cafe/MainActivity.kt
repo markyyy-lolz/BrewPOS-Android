@@ -15,6 +15,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -33,6 +34,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -44,11 +46,11 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-private val Coffee = Color(0xFF30241D)
+private val Coffee = Color(0xFF2D1F1A)
 private val Cocoa = Color(0xFF756458)
 private val Cream = Color(0xFFF7F5F1)
-private val Gold = Color(0xFFC68958)
-private val Leaf = Color(0xFF386A54)
+private val Gold = Color(0xFFC4602F)
+private val Leaf = Color(0xFF254D3B)
 private val Pale = Color(0xFFF1E9DD)
 private val CoffeeTheme = lightColorScheme(
     primary = Coffee, onPrimary = Color.White, secondary = Leaf,
@@ -201,8 +203,8 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     var allProducts by remember { mutableStateOf(db.products(includeArchived = true)) }
     var allSales by remember { mutableStateOf(db.sales()) }
     val cart = remember { mutableStateListOf<CartLine>() }
-    var tab by remember { mutableStateOf("Dashboard") }
-    val isWide = LocalConfiguration.current.screenWidthDp >= 1100
+    var tab by remember { mutableStateOf("POS") }
+    val isWide = LocalConfiguration.current.screenWidthDp >= 700
     var cartOnPhone by remember { mutableStateOf(false) }
     var customizing by remember { mutableStateOf<Product?>(null) }
     var editing by remember { mutableStateOf<Product?>(null) }
@@ -312,17 +314,38 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             Row(
-                Modifier.fillMaxWidth().background(Cream).statusBarsPadding().padding(horizontal = 20.dp, vertical = 13.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("☕  BREWPOS", modifier = Modifier.clickable { tab = "Dashboard" }, color = Coffee, fontWeight = FontWeight.Black, fontSize = 20.sp)
-                    Text(shopName, color = Cocoa, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Surface(color = Color.White, shape = RoundedCornerShape(22.dp)) {
-                    TextButton(onClick = onManageLicense) {
-                        Text(if (licenseStatus.grace) "⚠ Renew license" else "✓ ${licenseStatus.plan}", color = if (licenseStatus.grace) Color.Red else Leaf, fontSize = 11.sp)
+                Modifier.fillMaxWidth().background(Color.White).statusBarsPadding()
+                    .padding(horizontal=if(isWide)20.dp else 13.dp,vertical=10.dp),
+                verticalAlignment=Alignment.CenterVertically,
+                horizontalArrangement=Arrangement.spacedBy(14.dp)
+            ){
+                if(!isWide) {
+                    Text("☕ BREWPOS",fontWeight=FontWeight.Black,color=Coffee,fontSize=19.sp,
+                        modifier=Modifier.clickable{tab="POS"})
+                } else {
+                    Surface(color=Cream,shape=RoundedCornerShape(23.dp),
+                        modifier=Modifier.weight(1f)) {
+                        Row(Modifier.padding(horizontal=15.dp,vertical=11.dp),
+                            verticalAlignment=Alignment.CenterVertically){
+                            Text("⌕",fontSize=20.sp,color=Cocoa)
+                            Spacer(Modifier.width(9.dp))
+                            Text("BrewPOS  •  "+shopName,color=Coffee,fontWeight=FontWeight.SemiBold,
+                                fontSize=13.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        }
                     }
+                }
+                Surface(color=Cream,shape=RoundedCornerShape(16.dp)){
+                    Row(Modifier.padding(horizontal=12.dp,vertical=10.dp),
+                        verticalAlignment=Alignment.CenterVertically){
+                        Text("●",color=Leaf,fontSize=11.sp)
+                        Spacer(Modifier.width(7.dp))
+                        Text(if(db.binding()!=null)"Branch linked"else"Local POS",
+                            color=Coffee,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                    }
+                }
+                TextButton(onClick=onManageLicense){
+                    Text(if(licenseStatus.grace)"⚠ Renew"else"✓ "+licenseStatus.plan,
+                        color=if(licenseStatus.grace)Color.Red else Leaf,fontSize=11.sp)
                 }
             }
         },
@@ -344,10 +367,10 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 "Dashboard" -> DashboardView(db, allProducts, allSales,
                     onSell = { tab = "POS" }, onOrders = { tab = "Orders" }, onMenu = { tab = "Menu" })
                 "POS" -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                    if (maxWidth >= 840.dp) {
+                    if (maxWidth >= 650.dp) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             ProductCatalog(allProducts.filter { it.active }, Modifier.weight(1f), onProduct = { customizing = it })
-                            CartPanel(cart, Modifier.width(390.dp).fillMaxHeight(), onSubmit = { service, method, discountText, tenderText, note ->
+                            CartPanel(cart, Modifier.width(if (maxWidth >= 950.dp) 385.dp else 290.dp).fillMaxHeight(), onSubmit = { service, method, discountText, tenderText, note ->
                                 val discount = parseMoney(discountText)
                                 val tendered = if (method == "Cash") parseMoney(tenderText) else 0
                                 if (discount == null || (method == "Cash" && tendered == null)) alert("Enter valid payment amounts")
@@ -459,42 +482,70 @@ private fun SectionTitle(title: String, subtitle: String = "") {
 private fun ProductCatalog(products: List<Product>, modifier: Modifier, onProduct: (Product) -> Unit) {
     var search by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("All") }
-    // Approved cloud catalogs can have café-defined categories, not only preset drinks.
-    val categories = listOf("All") + products.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
-    LaunchedEffect(categories) { if (category !in categories) category = "All" }
-    val filtered = products.filter {
-        (category == "All" || it.category == category) && it.name.contains(search, ignoreCase = true)
+    val categories=listOf("All")+products.map {it.category}.filter{it.isNotBlank()}.distinct().sorted()
+    LaunchedEffect(categories){if(category !in categories)category="All"}
+    val filtered=products.filter {
+        (category=="All"||it.category==category)&&it.name.contains(search,ignoreCase=true)
     }
     Column(modifier) {
-        SectionTitle("Explore the menu", "Choose a coffee and make it yours")
-        OutlinedTextField(value = search, onValueChange = { search = it },
-            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
-            singleLine = true, label = { Text("Search coffee, pastries, tea...") }, leadingIcon = { Text("⌕", fontSize = 22.sp) })
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            categories.forEach { item -> FilterChip(selected = item == category, onClick = { category = item }, label = { Text(item) }) }
+        Text("What are we brewing today?",fontSize=23.sp,fontWeight=FontWeight.Black,color=Coffee)
+        Text("Pick a favorite and customize it for your customer",
+            color=Cocoa,fontSize=12.sp)
+        Spacer(Modifier.height(13.dp))
+        OutlinedTextField(value=search,onValueChange={search=it},
+            modifier=Modifier.fillMaxWidth(),
+            shape=RoundedCornerShape(19.dp),singleLine=true,
+            placeholder={Text("Search menu items, SKU or drinks…",fontSize=13.sp)},
+            leadingIcon={Text("⌕",fontSize=23.sp,color=Leaf)})
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical=11.dp),
+            horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            categories.forEach{item->
+                FilterChip(selected=item==category,onClick={category=item},
+                    label={Text(item,fontSize=12.sp)},shape=RoundedCornerShape(19.dp),
+                    colors=FilterChipDefaults.filterChipColors(
+                        selectedContainerColor=Leaf,selectedLabelColor=Color.White))
+            }
         }
-        Spacer(Modifier.height(10.dp))
-        if (filtered.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No products found", color = Cocoa) }
-        else LazyVerticalGrid(columns = GridCells.Adaptive(minSize = 155.dp),
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(bottom = 100.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(filtered, key = { it.id }) { p ->
-                Surface(modifier = Modifier.fillMaxWidth().clickable(enabled = !p.trackStock || p.stock > 0) { onProduct(p) },
-                    color = Color.White, shape = RoundedCornerShape(22.dp), shadowElevation = 1.dp) {
-                    Column(Modifier.padding(15.dp)) {
-                        Box(Modifier.fillMaxWidth().height(94.dp).background(Pale, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
-                            Text(p.icon, fontSize = 47.sp)
+        if(filtered.isEmpty())Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+            Text("No menu items match your search.",color=Cocoa)
+        } else LazyVerticalGrid(columns=GridCells.Adaptive(minSize=136.dp),
+            modifier=Modifier.weight(1f).fillMaxWidth(),
+            contentPadding=PaddingValues(bottom=14.dp),
+            horizontalArrangement=Arrangement.spacedBy(10.dp),
+            verticalArrangement=Arrangement.spacedBy(10.dp)){
+            items(filtered,key={it.id}){p->
+                val available=!p.trackStock||p.stockMilli>0L
+                Surface(Modifier.fillMaxWidth().clickable(enabled=available){onProduct(p)},
+                    color=Color.White,shape=RoundedCornerShape(20.dp),shadowElevation=2.dp){
+                    Column(Modifier.padding(9.dp)){
+                        val tone=when {
+                            p.category.contains("tea",true)->Color(0xFFDCE7D5)
+                            p.category.contains("pastr",true)->Color(0xFFEFD9C1)
+                            else->Color(0xFFEAD9C8)
                         }
-                        Spacer(Modifier.height(10.dp))
-                        Text(p.category.uppercase(), fontSize = 10.sp, color = Leaf, fontWeight = FontWeight.Bold)
-                        Text(p.name, fontWeight = FontWeight.Bold, color = Coffee, fontSize = 15.sp,
-                            maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(8.dp))
-                        Text(peso(p.priceCents.toLong()), fontWeight = FontWeight.ExtraBold, color = Coffee, fontSize = 17.sp)
-                        Text(if (!p.trackStock) "Available" else if (p.stockMilli < 0L) "${p.stockLabel} (shortage)" else if (p.stockMilli == 0L) "Out of stock" else "${p.stockLabel} left",
-                            color = if (p.trackStock && p.stock < 6) Color(0xFFB04B2E) else Leaf, fontSize = 11.sp)
+                        Box(Modifier.fillMaxWidth().height(101.dp)
+                            .background(Brush.verticalGradient(listOf(tone,Cream)),
+                                RoundedCornerShape(14.dp)),contentAlignment=Alignment.Center){
+                            Box(Modifier.size(75.dp).background(Color.White.copy(alpha=.3f),CircleShape),
+                                contentAlignment=Alignment.Center){
+                                Text(p.icon,fontSize=49.sp)
+                            }
+                        }
+                        Column(Modifier.padding(start=4.dp,end=4.dp,top=9.dp,bottom=5.dp)){
+                            Text(p.name,fontWeight=FontWeight.Bold,color=Coffee,
+                                fontSize=14.sp,minLines=2,maxLines=2,
+                                overflow=TextOverflow.Ellipsis)
+                            Text(p.category,color=Cocoa,fontSize=11.sp)
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                Text(peso(p.priceCents.toLong()),color=Gold,fontWeight=FontWeight.Black,
+                                    fontSize=16.sp,modifier=Modifier.weight(1f))
+                                Text(if(available)"＋"else"×",color=if(available)Leaf else Color.Red,
+                                    fontSize=19.sp)
+                            }
+                            if(p.trackStock && (p.stockMilli<=0L || p.stockMilli<5000L))
+                                Text(if(p.stockMilli<=0L)"Sold out"else p.stockLabel+" remaining",
+                                    color=Color(0xFFB04B2E),fontSize=10.sp)
+                        }
                     }
                 }
             }
