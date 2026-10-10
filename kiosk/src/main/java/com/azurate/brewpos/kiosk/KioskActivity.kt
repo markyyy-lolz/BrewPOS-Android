@@ -84,23 +84,27 @@ private fun PairingScreen(onPaired:()->Unit) {
         val wide=maxWidth>=720.dp
         @Composable fun BrandHero(modifier:Modifier) {
             Column(modifier.background(Brush.linearGradient(listOf(Moss,Color(0xFF4A7154),Dark)))
-                .padding(26.dp),verticalArrangement=Arrangement.SpaceBetween) {
-                Text("☕  BREWPOS\n      S E L F   O R D E R",color=Color.White,
-                    fontWeight=FontWeight.Black,fontSize=23.sp,lineHeight=27.sp)
-                Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                .padding(if(wide)26.dp else 15.dp),verticalArrangement=Arrangement.SpaceBetween) {
+                Text(if(wide)"☕  BREWPOS\n      S E L F   O R D E R"else"☕ BREWPOS  •  SELF ORDER",
+                    color=Color.White,fontWeight=FontWeight.Black,
+                    fontSize=if(wide)23.sp else 19.sp,lineHeight=26.sp)
+                if(wide) Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
                     Text("Good coffee.\nBrighter days.",color=Color.White,fontWeight=FontWeight.Black,
-                        fontSize=if(wide)37.sp else 29.sp,lineHeight=42.sp)
+                        fontSize=37.sp,lineHeight=42.sp)
                     Text("Your next favorite cup starts here.",color=Color(0xFFE7ECE2),fontSize=13.sp)
-                }
-                Text("AZURATE SOFTWARE SOLUTIONS",color=Color(0xFFC4D4C8),fontSize=10.sp,letterSpacing=1.sp)
+                } else Text("A beautiful way to order your next favorite cup.",
+                    color=Color(0xFFE7ECE2),fontSize=13.sp)
+                if(wide) Text("AZURATE SOFTWARE SOLUTIONS",color=Color(0xFFC4D4C8),
+                    fontSize=10.sp,letterSpacing=1.sp)
             }
         }
         @Composable fun Setup(modifier:Modifier) {
             Box(modifier.padding(18.dp),contentAlignment=Alignment.Center) {
                 Surface(color=Color.White,shape=RoundedCornerShape(25.dp),shadowElevation=5.dp,
                     modifier=Modifier.fillMaxWidth().widthIn(max=500.dp)) {
-                    Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
-                        verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.then(if(wide)Modifier.verticalScroll(rememberScrollState())else Modifier)
+                        .padding(if(wide)24.dp else 18.dp),
+                        verticalArrangement=Arrangement.spacedBy(10.dp)) {
                         Text("Connect your kiosk",fontSize=27.sp,fontWeight=FontWeight.Black,color=Dark)
                         Text("One-time secure manager setup. Customers will see the self-order menu after pairing.",
                             color=Bean,fontSize=13.sp,lineHeight=19.sp)
@@ -189,9 +193,10 @@ private fun PairingScreen(onPaired:()->Unit) {
         if(wide) Row(Modifier.fillMaxSize()){
             BrandHero(Modifier.weight(1f).fillMaxHeight())
             Setup(Modifier.weight(1f).fillMaxHeight())
-        }else Column(Modifier.fillMaxSize()){
-            BrandHero(Modifier.fillMaxWidth().height(225.dp))
-            Setup(Modifier.fillMaxWidth().weight(1f))
+        }else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .imePadding()){
+            BrandHero(Modifier.fillMaxWidth().height(126.dp))
+            Setup(Modifier.fillMaxWidth())
         }
     }
 }
