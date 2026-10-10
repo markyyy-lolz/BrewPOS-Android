@@ -610,76 +610,129 @@ private fun CartPanel(cart: List<CartLine>, modifier: Modifier = Modifier,
     var discountText by remember { mutableStateOf("0") }
     var tenderText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
-    val discount = parseMoney(discountText)
-    val totals = CartMath.totals(cart, discount ?: 0)
-    val tendered = parseMoney(tenderText)
-    val enough = payment != "Cash" || (tendered != null && tendered >= totals.payable)
-    // Fresh order must not inherit the previous customer's instructions or cash tender.
-    LaunchedEffect(cart.isEmpty()) {
-        if (cart.isEmpty()) {
-            service = "Dine-in"; payment = "Cash"; discountText = "0"; tenderText = ""; note = ""
+    val discount=parseMoney(discountText)
+    val totals=CartMath.totals(cart,discount?:0)
+    val tendered=parseMoney(tenderText)
+    val enough=payment!="Cash"||(tendered!=null&&tendered>=totals.payable)
+    LaunchedEffect(cart.isEmpty()){
+        if(cart.isEmpty()){
+            service="Dine-in";payment="Cash";discountText="0";tenderText="";note=""
         }
     }
-    Surface(modifier, color = Color.White, shape = RoundedCornerShape(22.dp), shadowElevation = 1.dp) {
-        Column(Modifier.fillMaxSize().padding(17.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Current order", fontSize = 22.sp, color = Coffee, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-                Text("${cart.sumOf { it.quantity }} items", color = Cocoa, fontSize = 12.sp)
-            }
-            Spacer(Modifier.height(7.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Dine-in", "Takeout").forEach {
-                    FilterChip(selected = service == it, onClick = { service = it }, label = { Text(it) })
+    Surface(modifier,color=Color.White,shape=RoundedCornerShape(22.dp),shadowElevation=2.dp){
+        Column(Modifier.fillMaxSize().padding(15.dp)){
+            Row(verticalAlignment=Alignment.CenterVertically){
+                Text("🛍",fontSize=25.sp)
+                Spacer(Modifier.width(7.dp))
+                Column(Modifier.weight(1f)){
+                    Text("Current order",color=Coffee,fontSize=21.sp,fontWeight=FontWeight.Black)
+                    Text(cart.sumOf{it.quantity}.toString()+" item(s) selected",
+                        color=Cocoa,fontSize=11.sp)
                 }
             }
-            HorizontalDivider(Modifier.padding(vertical = 10.dp))
-            if (cart.isEmpty()) Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🛍", fontSize = 42.sp)
-                    Text("Your cart is empty", fontWeight = FontWeight.Bold)
-                    Text("Add a coffee to start", color = Cocoa)
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical=8.dp),
+                horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                listOf("Dine-in","Takeout").forEach{
+                    FilterChip(selected=service==it,onClick={service=it},label={Text(it,fontSize=12.sp)},
+                        shape=RoundedCornerShape(15.dp),
+                        colors=FilterChipDefaults.filterChipColors(
+                            selectedContainerColor=Leaf,selectedLabelColor=Color.White))
                 }
-            } else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(13.dp)) {
-                items(cart, key = { it.key }) { line ->
-                    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text("${line.quantity}×", fontWeight = FontWeight.Bold, color = Leaf)
-                        Column(Modifier.weight(1f)) {
-                            Text(line.product.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            if (line.options.isNotBlank()) Text(line.options, color = Cocoa, fontSize = 11.sp)
-                            Text(peso(line.lineCents.toLong()), fontWeight = FontWeight.Bold)
-                        }
-                        TextButton(onClick = { (cart as? MutableList<CartLine>)?.remove(line) }, contentPadding = PaddingValues(0.dp)) {
-                            Text("Remove", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+            }
+            HorizontalDivider(color=Pale)
+            if(cart.isEmpty())Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center){
+                Column(horizontalAlignment=Alignment.CenterHorizontally,
+                    verticalArrangement=Arrangement.spacedBy(8.dp)){
+                    Text("🛒",fontSize=43.sp)
+                    Text("Start a new order",color=Coffee,fontWeight=FontWeight.Bold)
+                    Text("Tap a menu card to add an item",color=Cocoa,fontSize=12.sp)
+                }
+            }else LazyColumn(Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement=Arrangement.spacedBy(9.dp),
+                contentPadding=PaddingValues(vertical=8.dp)){
+                items(cart,key={it.key}){line->
+                    Surface(color=Cream,shape=RoundedCornerShape(14.dp)){
+                        Column(Modifier.fillMaxWidth().padding(10.dp),
+                            verticalArrangement=Arrangement.spacedBy(5.dp)){
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                Box(Modifier.size(39.dp).background(Pale,RoundedCornerShape(10.dp)),
+                                    contentAlignment=Alignment.Center){Text(line.product.icon,fontSize=23.sp)}
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)){
+                                    Text(line.product.name,fontWeight=FontWeight.Bold,
+                                        fontSize=13.sp,color=Coffee,maxLines=2,
+                                        overflow=TextOverflow.Ellipsis)
+                                    if(line.options.isNotBlank())Text(line.options,
+                                        color=Cocoa,fontSize=10.sp,maxLines=1,
+                                        overflow=TextOverflow.Ellipsis)
+                                }
+                                Text(peso(line.lineCents.toLong()),color=Coffee,fontWeight=FontWeight.Bold,
+                                    fontSize=12.sp)
+                            }
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                TextButton(onClick={
+                                    val mutable=cart as? MutableList<CartLine>
+                                    val index=mutable?.indexOf(line)?:-1
+                                    if(index>=0){
+                                        if(line.quantity>1)mutable?.set(index,line.copy(quantity=line.quantity-1))
+                                        else mutable?.removeAt(index)
+                                    }
+                                },contentPadding=PaddingValues(0.dp)){Text("−",fontSize=18.sp)}
+                                Text(line.quantity.toString(),fontWeight=FontWeight.Bold,color=Coffee)
+                                TextButton(onClick={
+                                    val mutable=cart as? MutableList<CartLine>
+                                    val index=mutable?.indexOf(line)?:-1
+                                    if(index>=0&&line.quantity<99)
+                                        mutable?.set(index,line.copy(quantity=line.quantity+1))
+                                },contentPadding=PaddingValues(0.dp)){Text("+",fontSize=18.sp)}
+                                Spacer(Modifier.weight(1f))
+                                TextButton(onClick={(cart as? MutableList<CartLine>)?.remove(line)},
+                                    contentPadding=PaddingValues(0.dp)){Text("Remove",fontSize=11.sp,color=Color(0xFFB04B2E))}
+                            }
                         }
                     }
                 }
             }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Cash", "GCash", "Maya", "Card").forEach {
-                    FilterChip(selected = payment == it, onClick = { payment = it }, label = { Text(it, fontSize = 11.sp) })
+            HorizontalDivider(Modifier.padding(vertical=7.dp),color=Pale)
+            OutlinedTextField(value=note,onValueChange={note=it},
+                modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),
+                singleLine=true,label={Text("Order note / table",fontSize=11.sp)})
+            Spacer(Modifier.height(6.dp))
+            MoneyRow("Subtotal",peso(totals.subtotal.toLong()))
+            MoneyRow("Discount","− "+peso(totals.discount.toLong()))
+            MoneyRow("Total",peso(totals.payable.toLong()),prominent=true)
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical=8.dp),
+                horizontalArrangement=Arrangement.spacedBy(5.dp)){
+                listOf("Cash","GCash","Maya","Card").forEach{
+                    FilterChip(selected=payment==it,onClick={payment=it},
+                        label={Text(it,fontSize=11.sp)},shape=RoundedCornerShape(13.dp),
+                        colors=FilterChipDefaults.filterChipColors(
+                            selectedContainerColor=Leaf,selectedLabelColor=Color.White))
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = discountText, onValueChange = { discountText = it }, modifier = Modifier.weight(1f),
-                    label = { Text("Discount ₱") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                if (payment == "Cash") OutlinedTextField(value = tenderText, onValueChange = { tenderText = it }, modifier = Modifier.weight(1f),
-                    label = { Text("Tendered ₱") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                OutlinedTextField(discountText,{discountText=it},modifier=Modifier.weight(1f),
+                    singleLine=true,label={Text("Discount ₱",fontSize=11.sp)},
+                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal))
+                if(payment=="Cash")OutlinedTextField(tenderText,{tenderText=it},
+                    modifier=Modifier.weight(1f),singleLine=true,
+                    label={Text("Cash received ₱",fontSize=11.sp)},
+                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal))
             }
-            OutlinedTextField(value = note, onValueChange = { note = it }, modifier = Modifier.fillMaxWidth(),
-                label = { Text("Order note / table no. (optional)") }, maxLines = 2, singleLine = true)
-            Spacer(Modifier.height(10.dp))
-            MoneyRow("Subtotal", peso(totals.subtotal.toLong()))
-            MoneyRow("Discount", "− ${peso(totals.discount.toLong())}")
-            MoneyRow("Total", peso(totals.payable.toLong()), prominent = true)
-            if (payment == "Cash" && tendered != null && tendered >= totals.payable)
-                MoneyRow("Change", peso((tendered - totals.payable).toLong()))
-            Spacer(Modifier.height(10.dp))
-            Button(onClick = { onSubmit(service, payment, discountText, tenderText, note.trim()) },
-                enabled = cart.isNotEmpty() && discount != null && enough, modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(16.dp)) {
-                Text("Charge  ${peso(totals.payable.toLong())}  →", fontWeight = FontWeight.Bold)
+            if(payment=="Cash"&&tendered!=null&&tendered>=totals.payable)
+                MoneyRow("Change",peso((tendered-totals.payable).toLong()))
+            Spacer(Modifier.height(8.dp))
+            Button(onClick={onSubmit(service,payment,discountText,tenderText,note.trim())},
+                enabled=cart.isNotEmpty()&&discount!=null&&enough,
+                modifier=Modifier.fillMaxWidth().height(56.dp),
+                colors=ButtonDefaults.buttonColors(containerColor=Gold),
+                shape=RoundedCornerShape(16.dp)){
+                Text("Process payment  →  "+peso(totals.payable.toLong()),
+                    fontWeight=FontWeight.Bold,fontSize=14.sp)
             }
+            if(payment!="Cash")Text("Non-cash entries are recorded manually; no payment gateway is charged.",
+                color=Cocoa,fontSize=10.sp,textAlign=TextAlign.Center,
+                modifier=Modifier.fillMaxWidth().padding(top=4.dp))
         }
     }
 }
