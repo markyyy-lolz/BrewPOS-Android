@@ -150,7 +150,7 @@ public sealed class CafeStore {
     public SyncEntry QueueStockAdjustment(Tenant tenant,Guid actor,Guid productId,decimal delta,string reason) {
         if(tenant.Role is not ("owner" or "manager"))throw new InvalidOperationException("Manager permission needed.");
         if(!Authorized(DateTimeOffset.UtcNow,out var status))throw new InvalidOperationException("Activation needed: "+status);
-        if(delta==0||Math.Abs(delta)>100000)throw new InvalidOperationException("Invalid stock movement.");
+        if(delta==0||Math.Abs(delta)>100000||decimal.Round(delta,3)!=delta)throw new InvalidOperationException("Invalid stock movement.");
         using var db=Open();using var tx=db.BeginTransaction();
         var p=ReadMenu(db,tx,tenant).SingleOrDefault(p=>p.Id==productId)
             ??throw new InvalidOperationException("Unknown product.");

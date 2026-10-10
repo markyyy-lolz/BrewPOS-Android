@@ -88,7 +88,9 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
                 "This installation belongs to another branch. Its receipts cannot be reassigned."
             }
             require(previous!=null || pendingSyncCount()==0) { "Unlinked historical sales need owner reconciliation before linking." }
-            db.execSQL("INSERT INTO cloud_binding VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET role=excluded.role", arrayOf(org,branch,role))
+            db.insertWithOnConflict("cloud_binding",null,ContentValues().apply {
+                put("singleton",1);put("org_id",org);put("branch_id",branch);put("role",role)
+            },SQLiteDatabase.CONFLICT_REPLACE)
             db.setTransactionSuccessful()
         } finally {db.endTransaction()}
     }
@@ -168,7 +170,7 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
             db.beginTransaction()
             try {
                 val old=products(true).singleOrNull {it.id==p.id} ?: error("Create cloud menu products through the owner catalog first")
-                require(old.cloudId!=null && old.copy(stock=p.stock)==p) { "Cloud menu details must be changed by the owner; only stock adjustments are available offline" }
+                require(old.cloudId!=null && old.trackStock && old.copy(stock=p.stock)==p) { "Cloud menu details must be changed by the owner; only stock adjustments are available offline" }
                 val delta=p.stock.toLong()-old.stock.toLong()
                 require(delta!=0L && kotlin.math.abs(delta)<=100000) { "Enter a stock change of 1–100,000 units" }
                 val id=UUID.randomUUID().toString();val now=System.currentTimeMillis()

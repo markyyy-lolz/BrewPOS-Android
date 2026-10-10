@@ -32,3 +32,11 @@ Android currently represents stock in whole units and refuses an entire fraction
 Café Oabi branch name, approved owner/staff emails and roles, actual menu/prices/opening stock, and Android/Windows device activation IDs are needed. Do not invent staff, issue placeholder licenses or reuse another store's tenant. Owner signing, email verification, physical printers, app restart during upload, backups/restore and café acceptance require end-to-end verification. Existing automated BP1 tests establish signature format compatibility, not successful live issuance on the café's devices.
 
 Website public plans and owner dashboard exist. Production owner/onboarding functions have additional changes outside this branch; inspect live code before deploying them. This inventory change does not replace the owner API, change plan prices, send invitations or publish a new customer release.
+
+## Verification recorded 2026-10-10
+
+The inventory functions were applied through migration `brewpos_inventory_protocol_v2` and `brewpos-sync` version 4 was deployed. Verified the live database sale, duplicate ACK, single inventory deduction and catalog in a transaction whose fixtures were rolled back; retained sales remained zero. The deployed unauthenticated catalog request returned HTTP 401. Local and CI database/API suite: 15 passing tests. Existing website suite: 11 passing tests. Initial Android and Windows CI for this change passed, including APK and installer packaging.
+
+Supabase security advisor reported no database security findings for the new functions; the existing Auth setting has [leaked-password protection disabled](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). No Auth settings were changed.
+
+The only existing organization/branch is Azurate Software Solutions / Internal Test Café. Café Oabi has not been provisioned. The published website already has plans, email-OTP owner login and customer onboarding screens. Listed Basic/Premium prices are explicitly indicative, not approved offers; no pricing was changed in this update.

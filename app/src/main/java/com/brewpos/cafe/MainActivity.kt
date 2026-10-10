@@ -212,6 +212,10 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     val snackbar = remember { SnackbarHostState() }
     fun refresh() { allProducts = db.products(includeArchived = true); allSales = db.sales() }
     fun alert(message: String) { scope.launch { snackbar.showSnackbar(message) } }
+    LaunchedEffect(tab) {
+        // Show catalog/stock updates after cloud setup and during an open cashier session.
+        while(true) { refresh();delay(5_000) }
+    }
     val savePdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(requireNotNull(pendingPdf)) } ?: error("Cannot write file") }
