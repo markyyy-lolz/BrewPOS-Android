@@ -52,6 +52,9 @@ jobs:
       - name: Build local HTTPS hub
         shell: pwsh
         run: dotnet build kiosk/hub/BrewPOS.Kiosk.Hub.csproj -c Release -warnaserror
+      - name: Verify hub idempotency and payment release tests
+        shell: pwsh
+        run: dotnet test kiosk/hub-tests/BrewPOS.Kiosk.Tests.csproj -c Release --verbosity normal
       - name: Build Windows kiosk and KDS
         shell: pwsh
         run: dotnet build kiosk/windows/BrewPOS.Kiosk.Windows.csproj -c Release -warnaserror
