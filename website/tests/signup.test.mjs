@@ -93,7 +93,7 @@ test("website and Android use exactly six digits and offer resend after a link-o
   const screen=root("app/src/main/java/com/brewpos/cafe/CloudScreen.kt");
   assert.ok(signup.includes('pattern="[0-9]{6}" maxlength="6"'));
   assert.ok(signup.includes('id="resend"'));
-  assert.ok(js.includes('Resend'));
+  assert.ok(js.includes('el("resend").addEventListener("click"'));
   assert.ok(js.includes('if(!/^[0-9]{6}$/.test(token))'));
   assert.ok(cloud.includes('Regex("^[0-9]{6}$")'));
   assert.ok(dialog.includes("Resend 6-digit code"));
