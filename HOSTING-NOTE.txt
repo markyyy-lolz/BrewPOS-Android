@@ -1,1 +1,19 @@
-BrewPOS static public website. Connect the gh-pages branch root as GitHub Pages publishing source in Settings > Pages. This static hosting uses a mailto inquiry flow; Cloudflare Pages Functions remain in main/website/functions for email automation. Do not claim website is live until Pages is enabled and verified.
+BrewPOS by Azurate Software Solutions — GitHub Pages publishing branch
+
+OFFICIAL GITHUB PAGES URL
+https://markyyy-lolz.github.io/BrewPOS-Android/
+
+AZURATE OWNER DASHBOARD
+https://markyyy-lolz.github.io/BrewPOS-Android/owner.html
+
+PUBLISH SOURCE
+Branch: gh-pages
+Directory: / (repository root)
+
+The public landing page and Owner Console (owner.html, owner.css and owner.js) are hosted by GitHub Pages. Supabase project rfxzbuocxersgbshczbj is used ONLY for BrewPOS authentication, cloud data and server-side license signing.
+
+IMPORTANT: Publishing the static owner page is not the same as provisioning owner login or enabling valid activation issuance. The verified owner account and ORIGINAL matching ECDSA signing private key must be configured securely in Supabase first. Never place private signing keys, Supabase secret/service-role keys, or owner passwords in this public GitHub Pages branch.
+
+The owner dashboard is linked from the landing page's navigation. GitHub Pages workflow status should be checked under Actions > pages build and deployment. No local offline Android sales are modified by publishing this website.
+
+Last republish request: 2026-10-10 (Asia/Manila).
