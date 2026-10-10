@@ -192,6 +192,8 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     var shopName by remember { mutableStateOf(prefs.getString("shop_name", "Brew & Bean Coffee") ?: "Brew & Bean Coffee") }
     var footer by remember { mutableStateOf(prefs.getString("footer", "Thank you! Come back for another cup.") ?: "Thank you!") }
     var printerMac by remember { mutableStateOf(prefs.getString("printer_mac", "") ?: "") }
+    var baristaMac by remember { mutableStateOf(prefs.getString("printer_barista_mac", "") ?: "") }
+    var kitchenMac by remember { mutableStateOf(prefs.getString("printer_kitchen_mac", "") ?: "") }
     var printerWidth by remember { mutableIntStateOf(prefs.getInt("printer_width", 32)) }
     var autoCut by remember { mutableStateOf(prefs.getBoolean("auto_cut", false)) }
     var autoPrintBoth by remember { mutableStateOf(prefs.getBoolean("auto_print_both", true)) }
@@ -240,38 +242,55 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
             else { pendingPdf = bytes; pendingFilename = "${sale.receiptNo}.pdf"; savePdf.launch(pendingFilename) }
         }.onFailure { alert(it.message ?: "Receipt error") }
     }
-    /** One configured printer for all slips. Combined job uses one socket and two sections. */
+    /** Independently route each ESC/POS slip to its paired printer. Empty barista uses receipt printer. */
     fun thermalPrint(sale: Sale, which: String, automatic: Boolean = false) {
         if (pendingPrintJobs > 0 && !automatic) {
-            alert("Printer is busy. Automatic slips are queued; check the paper before printing again.")
+            alert("A print job is already active. Check paper before retrying.")
             return
         }
         if (!ThermalPrinter.permissionGranted(context)) {
             if (!automatic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 requestNearby.launch(Manifest.permission.BLUETOOTH_CONNECT)
-            else alert("Sale saved. Allow Nearby Devices to print the receipt and barista slip.")
+            else alert("Sale saved. Enable Nearby Devices permission to print.")
             return
         }
         if (printerMac.isBlank()) {
             if (!automatic) tab = "Settings"
-            alert("Sale saved. Select ONE paired Bluetooth printer in Settings.")
+            alert("Sale saved. Assign a receipt printer in Settings.")
             return
         }
         pendingPrintJobs++
         scope.launch {
             try {
                 val lines = db.saleLines(sale.id)
-                val bytes = when (which) {
-                    "customer" -> TicketFormatter.customer(shopName, footer, sale, lines, printerWidth, autoCut)
-                    "barista" -> TicketFormatter.barista(shopName, sale, lines, printerWidth, autoCut)
-                    "both" -> TicketFormatter.both(shopName, footer, sale, lines, printerWidth, autoCut)
-                    else -> error("Unknown print job")
+                val jobs = mutableListOf<Pair<String, Pair<String, ByteArray>>>()
+                val baristaTarget = baristaMac.ifBlank { printerMac }
+                if (which == "customer" || which == "both") {
+                    if (which == "both" && baristaTarget == printerMac) {
+                        jobs.add("Customer + barista" to (printerMac to TicketFormatter.both(shopName, footer, sale, lines, printerWidth, autoCut)))
+                    } else {
+                        jobs.add("Customer" to (printerMac to TicketFormatter.customer(shopName, footer, sale, lines, printerWidth, autoCut)))
+                    }
                 }
-                ThermalPrinter.print(context, printerMac, bytes)
-                    .onSuccess { alert("${if (which == "both") "Customer + barista slips" else if (which == "barista") "Barista slip" else "Customer receipt"} sent to printer") }
-                    .onFailure { alert("Sale saved. Print may be incomplete: ${it.message}. Check paper before retrying.") }
+                if (which == "barista" || (which == "both" && baristaTarget != printerMac)) {
+                    jobs.add("Barista" to (baristaTarget to TicketFormatter.barista(shopName, sale, lines, printerWidth, autoCut)))
+                }
+                if ((which == "kitchen" || which == "both") && kitchenMac.isNotBlank()) {
+                    jobs.add("Kitchen" to (kitchenMac to TicketFormatter.kitchen(shopName, sale, lines, printerWidth, autoCut)))
+                }
+                if (jobs.isEmpty()) {
+                    alert("No configured printer for this slip.")
+                } else {
+                    val failed = mutableListOf<String>()
+                    jobs.forEach { (label, target) ->
+                        ThermalPrinter.print(context, target.first, target.second)
+                            .onFailure { failed.add("$label: ${it.message ?: "connection failed"}") }
+                    }
+                    if (failed.isNotEmpty()) alert("Sale saved. Print status uncertain: ${failed.joinToString()}. Check printer paper before reprinting.")
+                    else alert("Sent ${jobs.joinToString { it.first }} ticket(s) to assigned printer(s).")
+                }
             } catch (e: Exception) {
-                alert("Sale saved. Could not prepare printout: ${e.message}")
+                alert("Sale saved; could not print: ${e.message}")
             } finally {
                 pendingPrintJobs = (pendingPrintJobs - 1).coerceAtLeast(0)
             }
@@ -380,13 +399,15 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                         .onFailure { e -> alert(e.message ?: "Unable to archive") }
                 })
                 "Reports" -> ReportsView(db, allSales)
-                "Settings" -> SettingsView(shopName, footer, printerMac, printerWidth, autoCut, autoPrintBoth,
-                    onSave = { newName, newFooter, mac, width, cut, autoBoth ->
+                "Settings" -> SettingsView(shopName, footer, printerMac, baristaMac, kitchenMac, printerWidth, autoCut, autoPrintBoth,
+                    onSave = { newName, newFooter, mac, barista, kitchen, width, cut, autoBoth ->
                         shopName = newName.ifBlank { "Coffee Shop" }; footer = newFooter
-                        printerMac = mac; printerWidth = width; autoCut = cut; autoPrintBoth = autoBoth
+                        printerMac = mac; baristaMac = barista; kitchenMac = kitchen
+                        printerWidth = width; autoCut = cut; autoPrintBoth = autoBoth
                         prefs.edit().putString("shop_name", shopName).putString("footer", footer)
-                            .putString("printer_mac", mac).putInt("printer_width", width).putBoolean("auto_cut", cut)
-                            .putBoolean("auto_print_both", autoBoth).apply()
+                            .putString("printer_mac", mac).putString("printer_barista_mac", barista)
+                            .putString("printer_kitchen_mac", kitchen).putInt("printer_width", width)
+                            .putBoolean("auto_cut", cut).putBoolean("auto_print_both", autoBoth).apply()
                         alert("Settings saved")
                     }, onRequestPermission = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
@@ -781,44 +802,38 @@ private fun Metric(title: String, number: String, caption: String) {
 
 @Composable
 private fun SettingsView(initialName: String, initialFooter: String, initialMac: String,
+                         initialBaristaMac: String, initialKitchenMac: String,
                          initialWidth: Int, initialCut: Boolean, initialAutoBoth: Boolean,
-                         onSave: (String, String, String, Int, Boolean, Boolean) -> Unit,
+                         onSave: (String, String, String, String, String, Int, Boolean, Boolean) -> Unit,
                          onRequestPermission: () -> Unit, onExport: () -> Unit) {
     val context = LocalContext.current
     var shop by remember(initialName) { mutableStateOf(initialName) }
     var footer by remember(initialFooter) { mutableStateOf(initialFooter) }
     var mac by remember(initialMac) { mutableStateOf(initialMac) }
+    var barista by remember(initialBaristaMac) { mutableStateOf(initialBaristaMac) }
+    var kitchen by remember(initialKitchenMac) { mutableStateOf(initialKitchenMac) }
     var width by remember(initialWidth) { mutableIntStateOf(initialWidth) }
     var cut by remember(initialCut) { mutableStateOf(initialCut) }
     var autoBoth by remember(initialAutoBoth) { mutableStateOf(initialAutoBoth) }
-    var printerMenu by remember { mutableStateOf(false) }
     var deviceRefresh by remember { mutableIntStateOf(0) }
     val permitted = ThermalPrinter.permissionGranted(context)
     val paired = remember(deviceRefresh, permitted) { ThermalPrinter.paired(context) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        SectionTitle("Shop settings", "Personalize the store and connect an ESC/POS receipt printer")
+        SectionTitle("Shop settings", "Personalize your café and route multiple ESC/POS printers")
         Surface(color = Color.White, shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("STORE PROFILE", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 OutlinedTextField(shop, { shop = it }, label = { Text("Coffee shop name") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(footer, { footer = it }, label = { Text("Receipt footer") }, modifier = Modifier.fillMaxWidth(), maxLines = 3)
                 HorizontalDivider()
-                Text("BLUETOOTH THERMAL PRINTER", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("BLUETOOTH THERMAL PRINTERS", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 if (!permitted) Button(onClick = onRequestPermission) { Text("Allow Nearby Devices") }
                 else {
-                    Text("Pair your printer first in Android Bluetooth Settings.", fontSize = 12.sp, color = Cocoa)
-                    Box {
-                        OutlinedButton(onClick = { deviceRefresh++; printerMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(paired.firstOrNull { it.address == mac }?.name ?: "Choose paired printer", maxLines = 1)
-                        }
-                        DropdownMenu(expanded = printerMenu, onDismissRequest = { printerMenu = false }) {
-                            if (paired.isEmpty()) DropdownMenuItem(text = { Text("No paired devices found") }, onClick = { printerMenu = false })
-                            paired.forEach { device ->
-                                DropdownMenuItem(text = { Text("${device.name ?: "Bluetooth device"} (${device.address})") },
-                                    onClick = { mac = device.address; printerMenu = false })
-                            }
-                        }
-                    }
+                    Text("Pair printers in Android Bluetooth settings before assigning them.", fontSize = 12.sp, color = Cocoa)
+                    PrinterChoice("Customer receipt printer", mac, paired, optional = false) { mac = it }
+                    PrinterChoice("Barista slip printer (blank = receipt printer)", barista, paired, optional = true) { barista = it }
+                    PrinterChoice("Kitchen printer (optional)", kitchen, paired, optional = true) { kitchen = it }
+                    TextButton(onClick = { deviceRefresh++ }) { Text("Refresh paired devices") }
                 }
                 Text("Receipt width", fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -830,20 +845,20 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
                     Text("Send auto-cut command (if supported)")
                 }
                 HorizontalDivider()
-                Text("ONE-PRINTER WORKFLOW", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("PRINT ROUTING", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = autoBoth, onCheckedChange = { autoBoth = it })
-                    Text("Auto-print customer receipt, then barista slip after checkout", fontSize = 12.sp)
+                    Text("Automatically print receipt and preparation slips after paid checkout", fontSize = 12.sp)
                 }
-                Text("Both use the printer above. With an auto-cutter, each slip is cut separately; otherwise tear along the separator. No drink prices appear on the barista slip.", fontSize = 11.sp, color = Cocoa)
-                Button(onClick = { onSave(shop, footer, mac, width, cut, autoBoth) }, modifier = Modifier.fillMaxWidth()) { Text("Save settings") }
+                Text("If barista and receipt printers match, both slips print in one connection. A configured kitchen printer receives another preparation slip. Printing failures never reverse a saved sale.", fontSize = 11.sp, color = Cocoa)
+                Button(onClick = { onSave(shop, footer, mac, barista, kitchen, width, cut, autoBoth) }, modifier = Modifier.fillMaxWidth()) { Text("Save printer routing") }
             }
         }
         Spacer(Modifier.height(15.dp))
         OutlinedButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Export sales summary (CSV)") }
         Text("CSV amounts are in centavos. Keep exports in a safe location; CSV is not a full database backup.", color = Cocoa, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
-        Text("BrewPOS v1.1 • One-printer customer + barista slips • Android 8.0+", color = Cocoa, fontSize = 12.sp)
+        Text("BrewPOS Android • Multi-printer receipt, barista and kitchen routing • Android 8.0+", color = Cocoa, fontSize = 12.sp)
         Text("Payments named GCash, Maya, and Card are manually recorded. This app does not capture payments through any gateway.", color = Cocoa, fontSize = 12.sp)
         Text("Local data is not yet backed up or synchronized across devices. Do not clear app storage without exporting your records.", color = Color(0xFFAE4C37), fontSize = 12.sp)
     }
@@ -881,7 +896,7 @@ private fun ReceiptDialog(sale: Sale, lines: List<SaleLine>, shopName: String,
                 }
                 Spacer(Modifier.height(6.dp))
                 Button(onClick = onBoth, modifier = Modifier.fillMaxWidth(), enabled = !isPrinting) {
-                    Text(if (isPrinting) "Printing on 1 printer..." else "Print BOTH • 1 Printer")
+                    Text(if (isPrinting) "Printing..." else "Print customer + preparation slips")
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     OutlinedButton(onClick = onCustomer, modifier = Modifier.weight(1f), enabled = !isPrinting) {
@@ -893,4 +908,28 @@ private fun ReceiptDialog(sale: Sale, lines: List<SaleLine>, shopName: String,
                 }
             }
         }, dismissButton = { TextButton(onClick = onClose) { Text("Close") } })
+}
+
+@Composable
+private fun PrinterChoice(
+    label: String, selectedMac: String, paired: List<android.bluetooth.BluetoothDevice>,
+    optional: Boolean, onSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    Box {
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+            val name = paired.firstOrNull { it.address == selectedMac }?.name
+            Text(name ?: if (selectedMac.isBlank()) "Not assigned" else "Device $selectedMac (not paired)", maxLines = 1)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (optional) DropdownMenuItem(text = { Text("Use default / disabled") },
+                onClick = { onSelected(""); expanded = false })
+            if (paired.isEmpty()) DropdownMenuItem(text = { Text("No paired printers") }, onClick = { expanded = false })
+            paired.forEach { device ->
+                DropdownMenuItem(text = { Text("${device.name ?: "Bluetooth device"} (${device.address})") },
+                    onClick = { onSelected(device.address); expanded = false })
+            }
+        }
+    }
 }

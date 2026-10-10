@@ -117,6 +117,9 @@ object TicketFormatter {
     fun barista(shop: String, sale: Sale, lines: List<SaleLine>, width: Int, cut: Boolean, copy: Boolean = false): ByteArray =
         asDocument(baristaText(shop, sale, lines, width, copy), width, cut)
 
+    fun kitchen(shop: String, sale: Sale, lines: List<SaleLine>, width: Int, cut: Boolean, copy: Boolean = false): ByteArray =
+        asDocument(baristaText(shop, sale, lines, width, copy).replace("BARISTA ORDER SLIP", "KITCHEN ORDER SLIP"), width, cut)
+
     fun both(shop: String, footer: String, sale: Sale, lines: List<SaleLine>, width: Int, cut: Boolean, copy: Boolean = false): ByteArray =
         customer(shop, footer, sale, lines, width, cut, copy) + barista(shop, sale, lines, width, cut, copy)
 }
