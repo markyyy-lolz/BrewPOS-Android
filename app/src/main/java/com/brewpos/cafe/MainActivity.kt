@@ -119,7 +119,7 @@ private fun ActivationScreen(
     var error by remember { mutableStateOf("") }
     BoxWithConstraints(Modifier.fillMaxSize().background(Cream)) {
         val wide = maxWidth >= 760.dp
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.Top) {
             if (wide) Column(
                 Modifier.width(340.dp).fillMaxHeight().background(Coffee).padding(28.dp),
                 verticalArrangement = Arrangement.SpaceBetween
@@ -139,16 +139,20 @@ private fun ActivationScreen(
                 }
                 Text("AZURATE SOFTWARE SOLUTIONS", color = Color(0xFFCEB7A5), fontSize = 11.sp)
             }
-            Box(Modifier.weight(1f).padding(if (wide) 26.dp else 12.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(1f).fillMaxHeight()
+                .verticalScroll(rememberScrollState()).imePadding()
+                .padding(horizontal=if(wide)26.dp else 14.dp,vertical=if(wide)30.dp else 16.dp),
+                contentAlignment = Alignment.TopCenter) {
                 Surface(
                     modifier = Modifier.fillMaxWidth().widthIn(max = 510.dp),
                     color = Color.White, shape = RoundedCornerShape(28.dp), shadowElevation = 4.dp
                 ) {
-                    Column(Modifier.verticalScroll(rememberScrollState()).padding(26.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.padding(if(wide)26.dp else 19.dp),
+                        verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         if (!wide) Text("☕ BREWPOS", color = Coffee, fontWeight = FontWeight.Black, fontSize = 22.sp)
-                        Text("Welcome to BrewPOS", color = Coffee, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold)
-                        Text("Activate this device to start selling.", color = Cocoa, fontSize = 13.sp)
+                        Text("Activate your BrewPOS", color = Coffee, fontSize = if(wide)27.sp else 23.sp,
+                            fontWeight = FontWeight.ExtraBold)
+                        Text("Secure device activation • Android café POS", color = Cocoa, fontSize = 12.sp)
                         if (current.message.isNotBlank()) Surface(color = Pale, shape = RoundedCornerShape(14.dp)) {
                             Text(current.message, modifier = Modifier.padding(12.dp), color = Coffee, fontSize = 12.sp)
                         }
@@ -164,11 +168,12 @@ private fun ActivationScreen(
                                 }) { Text("Copy device ID ↗") }
                             }
                         }
-                        Text("Send this device ID to Azurate to request your license.", color = Cocoa, fontSize = 12.sp)
+                        Text("Copy the Device ID above, then issue a signed activation in the owner dashboard.",
+                            color = Cocoa, fontSize = 11.sp)
                         OutlinedTextField(
                             value = input, onValueChange = { input = it; error = "" },
                             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-                            label = { Text("Paste activation code") }, minLines = 3, maxLines = 5
+                            label = { Text("Paste signed activation code") }, minLines = 2, maxLines = 3
                         )
                         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                         Button(
@@ -177,7 +182,7 @@ private fun ActivationScreen(
                             modifier = Modifier.fillMaxWidth().height(54.dp)
                         ) { Text("Activate BrewPOS →", fontWeight = FontWeight.Bold) }
                         if (canCancel) TextButton(onClick = onCancel) { Text("Back to POS") }
-                        Text("Lifetime, monthly and trial activation. 72-hour grace applies to expired time-limited plans.",
+                        Text("Signed lifetime, monthly or trial license · Offline verification.",
                             color = Cocoa, fontSize = 11.sp, textAlign = TextAlign.Center)
                     }
                 }
