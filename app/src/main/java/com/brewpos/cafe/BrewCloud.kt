@@ -122,7 +122,7 @@ object BrewCloud {
     }
     suspend fun loginWithCode(ctx: Context, email: String, code: String): Unit = withContext(Dispatchers.IO) {
         val normalized = email.trim().lowercase()
-        require(code.matches(Regex("^[0-9]{6,8}$"))) { "Enter the numeric email verification code" }
+        require(code.matches(Regex("^[0-9]{6}$"))) { "Enter the numeric email verification code" }
         val response = request(BASE + "/auth/v1/verify", JSONObject()
             .put("email", normalized)
             .put("token", code)
