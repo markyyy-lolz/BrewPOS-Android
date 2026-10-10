@@ -25,11 +25,15 @@ async function requestOwnerOtp(email) {
   const response=await fetch(CLOUD+"/auth/v1/otp",{
     method:"POST",cache:"no-store",
     headers:{"content-type":"application/json","apikey":PUBLISHABLE_KEY},
-    body:JSON.stringify({email:normalized,create_user:false})
+    body:JSON.stringify({email:normalized,create_user:true})
   });
-  if(!response.ok)throw Error(response.status===429?
-    "Too many email requests. Wait before retrying.":"Could not send the email OTP. Check your email and Supabase Auth email settings.");
-  // Never disclose whether an email has an owner role; server checks the Auth UUID.
+  if(!response.ok) {
+    if(response.status===429)throw Error("Email OTP rate limit reached. Please wait before requesting another code.");
+    if(response.status===422)throw Error("Supabase email signup is disabled. Enable Email signups or contact your Supabase administrator.");
+    throw Error("Could not send email OTP. Check SMTP and Auth settings, then try again.");
+  }
+  // Public Auth signup is not admin registration: the server grants access ONLY
+  // after an existing private invitation and verified email bind to an Auth UUID.
 }
 async function login(email,code) {
   const normalized=String(email).trim().toLowerCase();
