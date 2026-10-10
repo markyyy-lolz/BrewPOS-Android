@@ -65,28 +65,33 @@ jobs:
         if: success() && github.ref == 'refs/heads/feature/android-premium-ui-refresh' && github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v2.0.0-android-client-ready-preview.2
+          RELEASE_TAG: v2.1.0-android-dual-access-preview.1
         run: |
           set -euo pipefail
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/BrewPOS-Android-Cashier-PremiumUI-DEV.apk
           cp kiosk/build/outputs/apk/debug/kiosk-debug.apk dist/BrewPOS-Android-Kiosk-PremiumUI-DEV.apk
           cat > /tmp/brewpos-premium-notes.md <<'NOTES'
-          ## BrewPOS Premium Android UI — DEVELOPMENT PREVIEW
+          ## BrewPOS Android v2.1 — Cloud Login + Offline License (DEVELOPMENT PREVIEW)
           
-          Both native Android apps include the café-inspired Jetpack Compose redesign from PR #13:
+          Both native Android apps include the premium UI and updated access flow from PR #13:
+          - **Two Android cashier access modes:** Offline POS with genuine BP1 device key, or Cloud POS using approved email account and verified active plan, independent of offline license.
+          - **Cloud authentication:** Password or email verification code. Unapproved café users can request access directly in app; owner reviews in the live website Client Approvals tab.
+          - **Android Settings:** Account mode, pending sync status, local receipts, three printer tests, printer assignment and cloud sync.
+          - **Live owner dashboard:** Approve/reject cloud accounts, assign trial/monthly/lifetime plan, suspend/reactivate, issue offline licenses separately.
+          - **Safety:** Cloud checkout is blocked without recent server confirmation and registered branch. Offline key is still required for disconnected selling.
           - Cashier: café sidebar, adaptive landscape dual-pane checkout, polished catalog, quantity controls and branded cart.
           - Kiosk: premium manager pairing, welcome screen, dine-in/takeout selector, menu category chips, product cards and cart flow.
           
-          **Not a production checkout release.** Kiosk tables and authenticated Edge API are deployed, but real ordering requires an approved café owner/manager account, branch, registered Android devices and real product menu. Live QR Ph payments remain unavailable. Android cashier offline SQLite ordering and branch inventory logic are inherited from existing development work. Real product photos require approved image assets and menu image metadata; cards currently use category illustrations. Do not claim live payment verification, cloud kiosk operation or physical printer acceptance.
+          **Technical preview, not production checkout certification.** Kiosk backend tables and authenticated Edge API are active, but pairing and ordering require an approved café organization, branch, device registration and real menu. QR Ph payment processing is not live. Cloud accounts require internet to authorize checkout; offline license mode remains the supported offline sales workflow. Android cashier offline SQLite ordering and branch inventory logic are inherited from existing development work. Real product photos require approved image assets and menu image metadata; cards currently use category illustrations. Do not claim live payment verification, cloud kiosk operation or physical printer acceptance.
           
           DEBUG-SIGNED TEST APKs ONLY. Install on a non-production tablet. Back up existing cashier local receipts and stock records before installation; do not clear app data. For the black Overlay #1 bar seen in screenshots, disable Android Developer Options > Simulate secondary displays > None.
           
-          The owner signing key is now stored in protected Supabase Vault; licensed cashier devices must receive a newly signed BP1 code from the authenticated owner activation generator. This APK verifies the new signing public key and retains compatibility with old issued signatures. The client-facing pairing and cashier activation views are now compact and scrollable on portrait Android tablets.\n          \n          Source: feature/android-premium-ui-refresh, PR #13. Details: docs/ANDROID_PREMIUM_UI_REFRESH.md.
+          Owner signing remains in Supabase Vault. Customer plans are verified by the authenticated server, not a local flag. This debug APK trusts the updated public key and older valid BP1 signatures. **Do not wipe Android app data or install over a productive device without backing up offline sales.**\n          \n          Source: feature/android-premium-ui-refresh, PR #13. Details: docs/ANDROID_PREMIUM_UI_REFRESH.md.
           NOTES
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --prerelease \
-              --title "BrewPOS Android — Client UI & Activation Fix Preview 2" \
+              --title "BrewPOS Android v2.1 — Cloud Login + Offline License Preview" \
               --notes-file /tmp/brewpos-premium-notes.md
           fi
           gh release upload "$RELEASE_TAG" dist/BrewPOS-Android-Cashier-PremiumUI-DEV.apk \
