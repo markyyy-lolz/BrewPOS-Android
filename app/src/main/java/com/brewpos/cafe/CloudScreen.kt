@@ -24,6 +24,7 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
     var password by remember { mutableStateOf("") }
     var otp by remember { mutableStateOf("") }
     var codeSent by remember { mutableStateOf(false) }
+    var showSignup by remember { mutableStateOf(false) }
     var loggedIn by remember { mutableStateOf(BrewCloud.signedIn(ctx)) }
     var linked by remember { mutableStateOf(BrewCloud.signedBranch(ctx)) }
     var response by remember { mutableStateOf<JSONObject?>(null) }
@@ -35,8 +36,11 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
     suspend fun loadBranches(){
         val data=BrewCloud.memberships(ctx)
         response=data
+        val request=data.optJSONObject("account_request")
         status=if(data.optJSONArray("memberships")?.length()==0)
-            "Account signed in, but no café membership exists yet. Assign this user in Supabase before registering."
+            if(request?.optString("status")=="pending")
+                "Email verified. Registration is pending Azurate approval. Your signed license will be assigned by the owner."
+            else "No approved merchant branch yet. Register your business or contact Azurate for approval."
             else "Select your authorized branch and register this tablet."
     }
     LaunchedEffect(loggedIn) {
@@ -53,6 +57,8 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
                     color=Color(0xFF756458),fontSize=13.sp)
                 Text(status,fontSize=12.sp,color=Color(0xFF756458))
                 if(!loggedIn) {
+                    OutlinedButton(onClick={showSignup=true},enabled=!busy,
+                        modifier=Modifier.fillMaxWidth()) { Text("Create account • Email OTP") }
                     OutlinedTextField(email,{email=it},label={Text("Staff email")},singleLine=true,modifier=Modifier.fillMaxWidth())
                     OutlinedTextField(password,{password=it},label={Text("Password")},singleLine=true,
                         visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
@@ -134,6 +140,14 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
                 }
             }
         }
+        if(showSignup) BrewSignupDialog(
+            onClose={ showSignup=false },
+            onRegistered={
+                showSignup=false
+                loggedIn=true
+                status="Verified registration submitted for Azurate approval."
+            }
+        )
         Text("Cloud accounts and Trial / Monthly / Lifetime plans are assigned by Azurate according to your purchased signed BP1 license. Sign in using the verified email, select your authorized branch and register the tablet. Offline sales remain saved until acknowledged.",
             fontSize=12.sp,color=Color(0xFF756458))
     }
