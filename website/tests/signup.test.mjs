@@ -72,3 +72,30 @@ test("public GitHub Pages registration verifies email OTP before submitting appr
   for(const forbidden of ["service_role","PRIVATE_KEY_PKCS8","localStorage","sessionStorage"])
     assert.equal(js.includes(forbidden),false);
 });
+
+test("Supabase confirmation and magic-link emails send the real six-digit OTP instead of a link",()=>{
+  for(const name of ["confirm-signup-otp.html","magic-link-otp.html"]) {
+    const html=root("supabase/email-templates/"+name);
+    assert.ok(html.includes("{{ .Token }}"),name+" must insert real generated Supabase OTP");
+    assert.equal(html.includes("{{ .ConfirmationURL }}"),false,name+" must not contain click-only confirmation");
+    assert.ok(html.includes("BrewPOS"));
+  }
+  const guide=root("supabase/email-templates/README.md");
+  assert.ok(guide.includes("Confirm signup"));
+  assert.ok(guide.includes("Magic Link"));
+  assert.ok(guide.includes("not yet saved inside Supabase Auth"));
+});
+test("website and Android use exactly six digits and offer resend after a link-only email",()=>{
+  const signup=root("website/public/signup.html");
+  const js=root("website/public/signup.js");
+  const cloud=root("app/src/main/java/com/brewpos/cafe/BrewCloud.kt");
+  const dialog=root("app/src/main/java/com/brewpos/cafe/BrewSignupDialog.kt");
+  const screen=root("app/src/main/java/com/brewpos/cafe/CloudScreen.kt");
+  assert.ok(signup.includes('pattern="[0-9]{6}" maxlength="6"'));
+  assert.ok(signup.includes('id="resend"'));
+  assert.ok(js.includes('Resend'));
+  assert.ok(js.includes('if(!/^[0-9]{6}$/.test(token))'));
+  assert.ok(cloud.includes('Regex("^[0-9]{6}$")'));
+  assert.ok(dialog.includes("Resend 6-digit code"));
+  assert.ok(screen.includes("Resend 6-digit code"));
+});
