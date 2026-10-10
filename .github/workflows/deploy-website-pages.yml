@@ -30,6 +30,22 @@ jobs:
       - name: Check website syntax and tests
         working-directory: website
         run: npm run check
+      - name: Verify deployed owner console and unauthenticated denial
+        run: |
+          set -euo pipefail
+          site='https://rfxzbuocxersgbshczbj.supabase.co/functions/v1/brewpos-site'
+          owner='https://rfxzbuocxersgbshczbj.supabase.co/functions/v1/brewpos-owner'
+          for file in owner.html owner.css owner.js; do
+            code=$(curl -fsSL -o "/tmp/brewpos-$file" -w '%{http_code}' --max-time 25 "$site/$file")
+            test "$code" = "200"
+          done
+          grep -q 'Azurate Owner Console' /tmp/brewpos-owner.html
+          grep -q 'auth-screen' /tmp/brewpos-owner.css
+          grep -q 'functions/v1/brewpos-owner' /tmp/brewpos-owner.js
+          # No owner account is provisioned yet: unauthenticated requests must never obtain owner data.
+          code=$(curl -sSL -o /tmp/brewpos-owner-denied.json -w '%{http_code}' --max-time 25 \
+            -X POST "$owner" -H 'content-type: application/json' -d '{"action":"overview"}')
+          test "$code" = "401" -o "$code" = "403" -o "$code" = "503"
       - name: Confirm static publishing files
         run: |
           test -f website/public/index.html
