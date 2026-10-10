@@ -160,8 +160,9 @@ sealed class HubDb {
             var old=check.ExecuteScalar() as string;
             if(old!=null) {
               var existing=JsonSerializer.Deserialize<KioskOrder>(old,Options.Web)!;
-              if(existing with {CreatedAt=null,Status="AwaitingPayment"} != order with {CreatedAt=null,Status="AwaitingPayment"})
-                throw new ConflictException("Conflicting order ID. Review locally.");
+              var left=JsonSerializer.Serialize(existing with {CreatedAt=null,Status="AwaitingPayment"},Options.Web);
+              var right=JsonSerializer.Serialize(order with {CreatedAt=null,Status="AwaitingPayment"},Options.Web);
+              if(left!=right)throw new ConflictException("Conflicting order ID. Review locally.");
               return new{accepted=true,duplicate=true,order.Id,order.Number};
             }
           }
