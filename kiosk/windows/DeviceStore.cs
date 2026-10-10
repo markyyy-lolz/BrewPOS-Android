@@ -92,7 +92,7 @@ public sealed class DeviceStore{
             foreach(var g in product.GetProperty("modifiers").EnumerateArray()){
                 var gid=g.GetProperty("id").GetString();
                 var selected=selections.EnumerateArray().FirstOrDefault(x=>x.GetProperty("groupId").GetString()==gid);
-                var ids=selected.ValueKind==JsonValueKind.Undefined?[]:
+                string?[] ids=selected.ValueKind==JsonValueKind.Undefined?Array.Empty<string?>():
                     selected.GetProperty("optionIds").EnumerateArray().Select(x=>x.GetString()).ToArray();
                 if(g.GetProperty("required").GetBoolean()&&ids.Length==0||
                     !g.GetProperty("multiple").GetBoolean()&&ids.Length>1||
