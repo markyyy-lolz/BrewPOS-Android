@@ -67,6 +67,17 @@ fun BrewSignupDialog(onClose: () -> Unit, onRegistered: () -> Unit) {
                             value=code,onValueChange={ code=it.filter(Char::isDigit).take(6) },
                             label={Text("Email OTP (6 digits)")},singleLine=true,
                             modifier=Modifier.fillMaxWidth(),enabled=!busy)
+                        if(!otpVerified) {
+                            TextButton(onClick={
+                                busy=true;message=""
+                                scope.launch {
+                                    runCatching { BrewCloud.sendRegistrationCode(email) }
+                                        .onSuccess { message="New six-digit code requested. Check inbox and spam." }
+                                        .onFailure { message=it.message ?: "Could not resend email code" }
+                                    busy=false
+                                }
+                            },enabled=!busy) { Text("Resend 6-digit code") }
+                        }
                         TextButton(onClick={
                             sent=false;code="";message=""
                         },enabled=!busy && !otpVerified) { Text("Use another email") }
