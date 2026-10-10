@@ -47,7 +47,7 @@ public static class TicketPrinter {
     }
     public static void Print(string printer,string text) {
         if(string.IsNullOrWhiteSpace(printer))throw new InvalidOperationException("Configure a Windows USB/Bluetooth receipt printer.");
-        var payload=Encoding.ASCII.GetBytes("\x1B@" +text.Replace("₱","PHP ").Replace("\r\n","\n").Replace('\n','\r')+"\r\r\r\x1D\x56\0");
+        var payload=Encoding.ASCII.GetBytes("\x1B@" +text.Replace("₱","PHP ").Replace("Café","Cafe").Replace("CAFÉ","CAFE").Replace("\r\n","\n")+"\n\n\n\x1D\x56\0");
         if(!OpenPrinter(printer,out var h,nint.Zero)||h.IsInvalid)
             throw new InvalidOperationException("Cannot open printer "+printer);
         using(h) {
