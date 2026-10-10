@@ -10,7 +10,10 @@ const backend = readFileSync(new URL("../../supabase/functions/brewpos-owner/ind
 test("owner portal uses a real API and does not expose privileged keys",()=>{
   const html=file("owner.html"),js=file("owner.js");
   assert.match(html,/noindex,nofollow/);
-  assert.match(html,/Activation generator/);
+  assert.match(html,/Offline licenses/);
+  assert.match(html,/Client approvals/);
+  assert.match(html,/Cloud accounts/);
+  assert.match(js,/approve_cloud_signup|set_cloud_account_status/);
   assert.match(html,/Issued licenses/);
   assert.match(html,/Cloud sales/);
   assert.match(js,/functions\/v1\/brewpos-owner/);
@@ -26,7 +29,7 @@ test("owner portal uses a real API and does not expose privileged keys",()=>{
 test("owner portal never fabricates sample transactions or offline records",()=>{
   const html=file("owner.html"),js=file("owner.js");
   assert.doesNotMatch(html,/BP-000182|₱24,580|demo metrics/i);
-  assert.match(html,/Offline tablet sales appear after successful sync/);
+  assert.match(html,/Cloud approval is independent of offline BP1 keys/);
   assert.match(js,/textContent/);
 });
 test("Android BP1 private-key compatibility and DER signature are verified",async()=>{
