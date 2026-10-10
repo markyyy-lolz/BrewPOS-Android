@@ -2,7 +2,7 @@ name: Android Debug APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/android-kiosk-qrph-multiprinter]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -41,7 +41,7 @@ jobs:
           gradle-version: '8.13'
 
       - name: Run tests and build debug APK
-        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug :kiosk:assembleDebug
 
       - name: Upload installable debug APK
         if: success()
@@ -49,6 +49,15 @@ jobs:
         with:
           name: BrewPOS-v2.0-hybrid-alpha-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Android self-ordering kiosk debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrewPOS-SelfOrdering-Android-Kiosk-DEV-APK
+          path: kiosk/build/outputs/apk/debug/kiosk-debug.apk
           if-no-files-found: error
           retention-days: 30
 
