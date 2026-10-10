@@ -192,7 +192,9 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
                 db.execSQL("INSERT INTO stock_outbox(event_id,payload,created_at) VALUES(?,?,?)",arrayOf(id,payload.toString(),now))
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
-            BrewCloud.queueNow(context)
+            // The stock write and outbox have already committed. Missing WorkManager
+            // must never report a failed adjustment or invite the cashier to repeat it.
+            runCatching { BrewCloud.queueNow(context) }
             return
         }
         require(p.stockMilli>=0)

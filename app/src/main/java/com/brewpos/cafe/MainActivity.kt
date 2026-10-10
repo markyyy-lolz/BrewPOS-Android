@@ -281,7 +281,10 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         cart.clear()
         refresh()
         receipt = saved
-        BrewCloud.queueNow(context)
+        // Checkout has already committed locally; scheduling failure cannot undo it.
+        runCatching { BrewCloud.queueNow(context) }.onFailure {
+            alert("Sale saved locally. Open Cloud and sync manually when available.")
+        }
         if (autoPrintBoth) thermalPrint(saved, "both", automatic = true)
         else alert("Sale completed. Print both slips from the receipt screen.")
     }
@@ -425,7 +428,9 @@ private fun SectionTitle(title: String, subtitle: String = "") {
 private fun ProductCatalog(products: List<Product>, modifier: Modifier, onProduct: (Product) -> Unit) {
     var search by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("All") }
-    val categories = listOf("All", "Coffee", "Non-Coffee", "Tea", "Pastries")
+    // Approved cloud catalogs can have café-defined categories, not only preset drinks.
+    val categories = listOf("All") + products.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
+    LaunchedEffect(categories) { if (category !in categories) category = "All" }
     val filtered = products.filter {
         (category == "All" || it.category == category) && it.name.contains(search, ignoreCase = true)
     }
