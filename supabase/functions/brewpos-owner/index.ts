@@ -104,7 +104,7 @@ async function issueLicense(input: Record<string, unknown>, userId: string) {
 }
 // Account creation is an Azurate-owner-only operation. A customer gets a role ONLY
 // after being invited to Auth and associated with a real, server-recorded BP1 issue.
-const validEmail = (s: string) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s) && s.length <= 254;
+const validEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) && s.length <= 254;
 async function insertOne(table: string, data: Record<string,unknown>) {
   const r=await api(table+"?select=*", {
     method:"POST", headers:{"prefer":"return=representation"}, body:JSON.stringify(data)
