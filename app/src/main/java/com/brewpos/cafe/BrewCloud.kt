@@ -181,6 +181,56 @@ object BrewCloud {
             uploaded
         }
     }
+    data class IncomingKioskOrder(
+        val id:String, val number:String, val service:String, val payment:String,
+        val status:String, val totalCents:Long, val createdAt:Long, val lines:List<SaleLine>
+    ) {
+        fun asSale(): Sale = Sale(0L,number,createdAt,service,
+            if(payment=="qrph") "QRPH" else "Cash",totalCents.toInt(),0,totalCents.toInt(),
+            totalCents.toInt(),0,"Self-ordering kiosk",if(status=="paid")"Ready" else "Queued")
+    }
+    suspend fun kioskOrders(ctx:Context):List<IncomingKioskOrder> = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val db=StoreDb(ctx.applicationContext)
+            val scope=db.binding() ?: throw IOException("Pair the cashier tablet to a café branch first.")
+            val body=JSONObject().put("action","cashier_orders")
+                .put("organization_id",scope.first).put("branch_id",scope.second)
+                .put("installation_id",db.installationId())
+            val rows=request("$BASE/functions/v1/brewpos-kiosk",body,validToken(ctx)).getJSONArray("orders")
+            buildList {
+                for(i in 0 until rows.length()) {
+                    val o=rows.getJSONObject(i)
+                    val items=o.getJSONArray("items")
+                    val lines=buildList {
+                        for(j in 0 until items.length()) {
+                            val item=items.getJSONObject(j)
+                            add(SaleLine(0L,item.getString("name"),
+                                item.optString("options",""),item.getInt("quantity"),
+                                item.getInt("unit_centavos"),item.getInt("line_centavos")))
+                        }
+                    }
+                    val time=runCatching {
+                        java.time.Instant.parse(o.getString("created_at")).toEpochMilli()
+                    }.getOrDefault(System.currentTimeMillis())
+                    add(IncomingKioskOrder(o.getString("id"),"K-"+o.getLong("order_number"),
+                        o.getString("service_type"),o.getString("payment_choice"),
+                        o.getString("payment_status"),o.getLong("total_centavos"),time,lines))
+                }
+            }
+        }
+    }
+    suspend fun acceptKioskCash(ctx:Context,orderId:String,tenderedCents:Int):Boolean = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val db=StoreDb(ctx.applicationContext)
+            val branch=db.binding() ?: throw IOException("Register the cashier device first")
+            val body=JSONObject().put("action","cashier_pay").put("organization_id",branch.first)
+                .put("branch_id",branch.second).put("installation_id",db.installationId())
+                .put("order_id",orderId).put("tendered_centavos",tenderedCents)
+            val result=request("$BASE/functions/v1/brewpos-kiosk",body,validToken(ctx))
+            require(result.optBoolean("accepted")) { "Cash payment was not confirmed by cloud" }
+            !result.optBoolean("duplicate") // printing should not repeat on duplicate payment
+        }
+    }
     fun schedule(ctx:Context) {
         val constraint=Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
         val background=PeriodicWorkRequestBuilder<BrewCloudWorker>(15,TimeUnit.MINUTES)

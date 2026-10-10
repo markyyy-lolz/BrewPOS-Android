@@ -243,7 +243,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         }.onFailure { alert(it.message ?: "Receipt error") }
     }
     /** Independently route each ESC/POS slip to its paired printer. Empty barista uses receipt printer. */
-    fun thermalPrint(sale: Sale, which: String, automatic: Boolean = false) {
+    fun thermalPrint(sale: Sale, which: String, automatic: Boolean = false, linesOverride: List<SaleLine>? = null) {
         if (pendingPrintJobs > 0 && !automatic) {
             alert("A print job is already active. Check paper before retrying.")
             return
@@ -262,7 +262,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         pendingPrintJobs++
         scope.launch {
             try {
-                val lines = db.saleLines(sale.id)
+                val lines = linesOverride ?: db.saleLines(sale.id)
                 val jobs = mutableListOf<Pair<String, Pair<String, ByteArray>>>()
                 val baristaTarget = baristaMac.ifBlank { printerMac }
                 if (which == "customer" || which == "both") {
@@ -330,7 +330,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
             if (!isWide) NavigationBar(containerColor = Color.White, tonalElevation = 1.dp) {
                 listOf(Triple("POS", "☕", "Sell"), Triple("Orders", "🧾", "Orders"),
                     Triple("Menu", "📋", "Menu"), Triple("Reports", "📊", "Reports"),
-                    Triple("Settings", "⚙", "Settings"), Triple("Cloud", "☁", "Cloud")).forEach { (key, symbol, label) ->
+                    Triple("Settings", "⚙", "Settings"), Triple("Cloud", "☁", "Cloud"), Triple("Kiosk", "🛎", "Kiosk")).forEach { (key, symbol, label) ->
                     NavigationBarItem(selected = tab == key, onClick = { tab = key; cartOnPhone = false },
                         icon = { Text(symbol, fontSize = 20.sp) }, label = { Text(label, fontSize = 10.sp) })
                 }
@@ -389,6 +389,14 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                         .onFailure { alert(it.message ?: "Unable to update status") }
                 })
                 "Cloud" -> CloudScreen(context, db)
+                "Kiosk" -> KioskOrdersView(onPrint = { order ->
+                    thermalPrint(order.asSale(),"both",linesOverride=order.lines)
+                }, onPaid = { order, first ->
+                    if(first && autoPrintBoth)
+                        thermalPrint(order.asSale(),"both",automatic=true,linesOverride=order.lines)
+                    else alert(if(first)"Kiosk payment saved. Print preparation slips from this screen."
+                        else "Already paid. Avoid printing duplicate slips.")
+                })
                 "Menu" -> MenuView(allProducts, onAdd = { addingProduct = true }, onEdit = { editing = it }, onRestore = { p ->
                     runCatching { db.saveProduct(p.copy(active = true)); refresh() }
                         .onSuccess { alert("${p.name} restored") }
@@ -858,7 +866,7 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
         OutlinedButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Export sales summary (CSV)") }
         Text("CSV amounts are in centavos. Keep exports in a safe location; CSV is not a full database backup.", color = Cocoa, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
-        Text("BrewPOS Android • Multi-printer receipt, barista and kitchen routing • Android 8.0+", color = Cocoa, fontSize = 12.sp)
+        Text("BrewPOS Android • Multi-printer routing + Kiosk Orders queue • Android 8.0+", color = Cocoa, fontSize = 12.sp)
         Text("Payments named GCash, Maya, and Card are manually recorded. This app does not capture payments through any gateway.", color = Cocoa, fontSize = 12.sp)
         Text("Local data is not yet backed up or synchronized across devices. Do not clear app storage without exporting your records.", color = Color(0xFFAE4C37), fontSize = 12.sp)
     }
@@ -929,6 +937,82 @@ private fun PrinterChoice(
             paired.forEach { device ->
                 DropdownMenuItem(text = { Text("${device.name ?: "Bluetooth device"} (${device.address})") },
                     onClick = { onSelected(device.address); expanded = false })
+            }
+        }
+    }
+}
+
+@Composable
+private fun KioskOrdersView(
+    onPrint:(BrewCloud.IncomingKioskOrder)->Unit,
+    onPaid:(BrewCloud.IncomingKioskOrder,Boolean)->Unit
+) {
+    val context=LocalContext.current
+    val scope=rememberCoroutineScope()
+    var orders by remember { mutableStateOf<List<BrewCloud.IncomingKioskOrder>>(emptyList()) }
+    var busy by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("") }
+    var cashInput by remember { mutableStateOf("") }
+    var selection by remember { mutableStateOf<String?>(null) }
+    suspend fun refresh(){
+        runCatching { BrewCloud.kioskOrders(context) }
+            .onSuccess { orders=it;status="" }
+            .onFailure { status=it.message ?: "Kiosk server unavailable" }
+    }
+    LaunchedEffect(Unit) {
+        refresh()
+        while(true){delay(10000);if(!busy)refresh()}
+    }
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        SectionTitle("Self-ordering kiosk", "Shared Android kiosk orders • staff-only cashier settlement")
+        Row(verticalAlignment=Alignment.CenterVertically){
+            Text("${orders.count{it.status=="unpaid"&&it.payment=="cashier"}} waiting at cashier",
+                color=Cocoa,modifier=Modifier.weight(1f))
+            OutlinedButton(onClick={scope.launch { refresh() }},enabled=!busy){Text("Refresh")}
+        }
+        if(status.isNotBlank()) Text(status,color=Color(0xFFB3342D))
+        LazyColumn(verticalArrangement=Arrangement.spacedBy(9.dp)) {
+            items(orders,key={it.id}){o ->
+                Surface(color=Color.White,shape=RoundedCornerShape(18.dp)){
+                    Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
+                        Row(verticalAlignment=Alignment.CenterVertically){
+                            Column(Modifier.weight(1f)){
+                                Text(o.number,fontWeight=FontWeight.Black,fontSize=20.sp)
+                                Text("${o.service} · ${if(o.payment=="cashier")"Pay at Cashier" else "QR Ph"} · ${o.status}",
+                                    color=Cocoa,fontSize=12.sp)
+                            }
+                            Text(peso(o.totalCents),fontWeight=FontWeight.Bold,fontSize=18.sp)
+                        }
+                        o.lines.forEach { l ->
+                            Text("${l.quantity}× ${l.productName} — ${l.options}",
+                                fontSize=13.sp,color=Coffee)
+                        }
+                        if(o.payment=="cashier"&&o.status=="unpaid") {
+                            if(selection==o.id) {
+                                OutlinedTextField(cashInput,{cashInput=it},singleLine=true,
+                                    label={Text("Cash received (₱)")},
+                                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal))
+                                Button(enabled=!busy&&parseMoney(cashInput)?.let{it>=o.totalCents}==true,
+                                    onClick={
+                                        val tender=parseMoney(cashInput) ?: return@Button
+                                        busy=true
+                                        scope.launch {
+                                            runCatching { BrewCloud.acceptKioskCash(context,o.id,tender) }
+                                                .onSuccess { first ->
+                                                    onPaid(o.copy(status="paid"),first)
+                                                    selection=null;cashInput=""
+                                                }
+                                                .onFailure {status=it.message?:"Cash settlement failed"}
+                                            refresh();busy=false
+                                        }
+                                    }){Text(if(busy)"Confirming..." else "Confirm payment & send tickets")}
+                            } else OutlinedButton(onClick={selection=o.id;cashInput=""}){Text("Collect cash")}
+                        }
+                        if(o.status=="paid") OutlinedButton(enabled=!busy,onClick={onPrint(o)}) {
+                            Text("Print receipt + barista + kitchen (manual reprint)")
+                        }
+                    }
+                }
             }
         }
     }
