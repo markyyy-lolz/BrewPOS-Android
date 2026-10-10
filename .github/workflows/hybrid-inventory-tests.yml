@@ -1,7 +1,7 @@
 name: Hybrid inventory contracts
 on:
   push:
-    branches: [feature/cafe-oabi-windows-hybrid-v1, feature/android-kiosk-qrph-multiprinter]
+    branches: [feature/cafe-oabi-windows-hybrid-v1, feature/android-kiosk-qrph-multiprinter, feature/android-premium-ui-refresh]
   pull_request:
     branches: [main]
 permissions:
