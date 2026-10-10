@@ -18,13 +18,35 @@ function setSignedIn(yes) {
   el("app").hidden=!yes;
   if(!yes) {el("generatedCode").value="";el("codeResult").hidden=true;el("noCode").hidden=false;}
 }
-async function login(email,password) {
-  const response = await fetch(CLOUD+"/auth/v1/token?grant_type=password",{
-    method:"POST",cache:"no-store",headers:{"content-type":"application/json","apikey":PUBLISHABLE_KEY},
-    body:JSON.stringify({email,password})
+async function requestOwnerOtp(email) {
+  const normalized=String(email).trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized))
+    throw Error("Enter a valid owner email address.");
+  const response=await fetch(CLOUD+"/auth/v1/otp",{
+    method:"POST",cache:"no-store",
+    headers:{"content-type":"application/json","apikey":PUBLISHABLE_KEY},
+    body:JSON.stringify({email:normalized,create_user:true})
   });
-  if(!response.ok)throw Error("Incorrect credentials or unconfirmed email.");
-  const body = await response.json();
+  if(!response.ok) {
+    if(response.status===429)throw Error("Email OTP rate limit reached. Please wait before requesting another code.");
+    if(response.status===422)throw Error("Supabase email signup is disabled. Enable Email signups or contact your Supabase administrator.");
+    throw Error("Could not send email OTP. Check SMTP and Auth settings, then try again.");
+  }
+  // Public Auth signup is not admin registration: the server grants access ONLY
+  // after an existing private invitation and verified email bind to an Auth UUID.
+}
+async function login(email,code) {
+  const normalized=String(email).trim().toLowerCase();
+  const token=String(code).trim();
+  // Preserve the exact generated numeric token; do not truncate an 8-digit code.
+  if(!/^[0-9]{6,8}$/.test(token))throw Error("Enter the full numeric email code.");
+  const response=await fetch(CLOUD+"/auth/v1/verify",{
+    method:"POST",cache:"no-store",
+    headers:{"content-type":"application/json","apikey":PUBLISHABLE_KEY},
+    body:JSON.stringify({email:normalized,token,type:"email"})
+  });
+  if(!response.ok)throw Error("Email verification code expired or invalid. Request a fresh code.");
+  const body=await response.json();
   if(!body.access_token)throw Error("Supabase did not return a valid session.");
   jwt=body.access_token;
   expiresAt=Date.now()+Math.max(60,Number(body.expires_in)||3600)*1000;
@@ -171,16 +193,30 @@ async function loadTab() {
     throw e;
   } finally{busy=false;el("refresh").disabled=false;}
 }
+el("sendLoginOtp").addEventListener("click",async()=>{
+  loginError("");
+  const button=el("sendLoginOtp");
+  const email=String(new FormData(el("loginForm")).get("email")||"");
+  button.disabled=true;
+  try{
+    await requestOwnerOtp(email);
+    loginError("Email code requested. Check your inbox and spam folder.");
+  }catch(e){loginError(e.message||"Could not request email code.");}
+  finally{button.disabled=false;}
+});
 el("loginForm").addEventListener("submit",async event=>{
  event.preventDefault();loginError("");
+ // currentTarget is only available while dispatching the event. Capture the
+ // form before any await so successful owner OTP login cannot throw on reset().
+ const form = event.currentTarget;
  const button=el("loginButton");button.disabled=true;
- const data=new FormData(event.currentTarget);
+ const data=new FormData(form);
  try{
-   await login(String(data.get("email")||""),String(data.get("password")||""));
-   // Owner permission is checked on the backend before showing the console.
+   await login(String(data.get("email")||""),String(data.get("code")||""));
+   // The server must authorize the verified Auth user ID before any owner data is displayed.
    await owner("overview");
    setSignedIn(true);
-   event.currentTarget.reset();
+   form.reset();
    switchTab("overview");
  }catch(e){
    clearSession();

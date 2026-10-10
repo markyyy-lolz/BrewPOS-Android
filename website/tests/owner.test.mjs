@@ -14,7 +14,8 @@ test("owner portal uses a real API and does not expose privileged keys",()=>{
   assert.match(html,/Issued licenses/);
   assert.match(html,/Cloud sales/);
   assert.match(js,/functions\/v1\/brewpos-owner/);
-  assert.match(js,/auth\/v1\/token/);
+  assert.match(js,/auth\/v1\/verify/);
+  assert.match(js,/auth\/v1\/otp/);
   assert.match(backend,/auth\/v1\/user/);
   assert.match(backend,/BREWPOS_OWNER_USER_ID/);
   assert.match(backend,/email_confirmed_at/);

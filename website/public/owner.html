@@ -18,12 +18,13 @@
  </div><small class="art-footer">AZURATE SOFTWARE SOLUTIONS · PHILIPPINES</small></div>
  <div class="auth-form-area"><div class="auth-mobile-logo">☕ BrewPOS <span>/ Owner Console</span></div><form id="loginForm" class="auth-card">
    <div class="tag"><span class="dot"></span> AUTHORIZED OWNER ACCESS</div>
-   <h1>Welcome back.</h1><p>Sign in using your verified Azurate owner account. Issuing codes requires the original private signing key configured on the server.</p>
-   <label>Email address<input type="email" name="email" placeholder="owner@yourdomain.com" autocomplete="username" required></label>
-   <label>Password<input type="password" name="password" placeholder="Enter your password" autocomplete="current-password" required></label>
-   <button type="submit" class="primary full" id="loginButton">Sign in to dashboard <span aria-hidden="true">→</span></button>
+   <h1>Welcome back.</h1><p>Sign in using a one-time email code sent to your verified Azurate Owner account. License issuance requires the matching signing key on the server.</p>
+   <label>Email address<input type="email" name="email" placeholder="Azurate owner email" autocomplete="email" required></label>
+   <button type="button" class="outline full" id="sendLoginOtp">Send email OTP</button>
+   <label>One-time email code<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" minlength="6" maxlength="8" placeholder="Code from your email" required></label>
+   <button type="submit" class="primary full" id="loginButton">Verify OTP & open dashboard <span aria-hidden="true">→</span></button>
    <p id="loginError" class="error" role="alert"></p>
-   <p class="subtle">No public signup or default administrator credentials. This website does not store your password.</p>
+   <p class="subtle">First-time invited owners may verify their email here. Access is granted only when a pre-approved private invitation matches the verified email. Customer accounts never become admins automatically. No tokens are stored in browser storage.</p>
  </form><a class="back-link" href="./">← Back to BrewPOS website</a></div>
 </div>
 <div class="app-shell" id="app" hidden>
