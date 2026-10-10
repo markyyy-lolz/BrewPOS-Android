@@ -74,39 +74,118 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun LicensedBrewPos() {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("brewpos_activation", Context.MODE_PRIVATE) }
-    val deviceId = remember { Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown-device" }
-    var activeKey by remember { mutableStateOf(prefs.getString("signed_license", "") ?: "") }
-    var showRenewal by remember { mutableStateOf(false) }
+    val ctx=LocalContext.current
+    val prefs=remember { ctx.getSharedPreferences("brewpos_activation",Context.MODE_PRIVATE) }
+    val deviceId=remember { Settings.Secure.getString(ctx.contentResolver,Settings.Secure.ANDROID_ID)?:"unknown-device" }
+    var mode by remember { mutableStateOf(prefs.getString("access_mode","")?:"") }
+    var activeKey by remember { mutableStateOf(prefs.getString("signed_license","")?:"") }
     var tick by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) { delay(30_000); tick = System.currentTimeMillis() }
+    var cloudVerified by remember { mutableStateOf(false) }
+    var cloudPlan by remember { mutableStateOf("CLOUD") }
+    var cloudCheckedAt by remember { mutableLongStateOf(0L) }
+    var cloudMessage by remember { mutableStateOf("Checking account approval…") }
+    val db=remember { StoreDb(ctx.applicationContext) }
+    LaunchedEffect(Unit) { while(true){delay(30000);tick=System.currentTimeMillis()} }
+    val offline=LicenseManager.evaluate(activeKey,deviceId,tick,prefs.getLong("last_checked",0))
+    LaunchedEffect(mode,tick) {
+        if(mode=="cloud" && BrewCloud.signedIn(ctx)){
+            runCatching{BrewCloud.memberships(ctx)}.onSuccess{data->
+                val memberships=data.optJSONArray("memberships")
+                val bound=db.binding()
+                val member=(0 until (memberships?.length()?:0))
+                    .map{memberships!!.getJSONObject(it)}
+                    .firstOrNull{bound==null||it.optString("organization_id")==bound.first}
+                cloudVerified=member!=null
+                cloudCheckedAt=if(cloudVerified)System.currentTimeMillis() else 0L
+                cloudPlan=member?.optJSONObject("entitlement")?.optString("plan","CLOUD")?:"CLOUD"
+                cloudMessage=if(member!=null)"Cloud account verified"
+                    else when(data.optJSONObject("account_request")?.optString("status")){
+                        "pending"->"Waiting for Azurate client approval"
+                        "rejected"->"Cloud registration was rejected"
+                        else->"No approved cloud account found"
+                    }
+            }.onFailure{cloudVerified=false;cloudCheckedAt=0;cloudMessage=it.message?:"Cloud offline"}
+        }else cloudVerified=false
     }
-    val status = LicenseManager.evaluate(activeKey, deviceId, tick, prefs.getLong("last_checked", 0))
-    LaunchedEffect(tick, activeKey) {
-        if (status.active && tick > prefs.getLong("last_checked", 0))
-            prefs.edit().putLong("last_checked", tick).apply()
+    fun changeMode(value:String){
+        mode=value;cloudVerified=false
+        prefs.edit().putString("access_mode",value).apply()
     }
-    fun activate(code: String): String? {
-        val now = System.currentTimeMillis()
-        val candidate = LicenseManager.evaluate(code.trim(), deviceId, now, prefs.getLong("last_checked", 0))
-        if (!candidate.active) return candidate.message
-        prefs.edit().putString("signed_license", code.trim()).putLong("last_checked", now).apply()
-        activeKey = code.trim()
-        tick = now
-        showRenewal = false
+    fun activate(code:String):String?{
+        val now=System.currentTimeMillis()
+        val candidate=LicenseManager.evaluate(code.trim(),deviceId,now,prefs.getLong("last_checked",0))
+        if(!candidate.active)return candidate.message
+        prefs.edit().putString("signed_license",code.trim()).putLong("last_checked",now).apply()
+        activeKey=code.trim();tick=now
         return null
     }
-    fun canCheckout(): Boolean {
-        val now = System.currentTimeMillis()
-        val checked = LicenseManager.evaluate(activeKey, deviceId, now, prefs.getLong("last_checked", 0))
-        if (checked.active && now > prefs.getLong("last_checked", 0)) prefs.edit().putLong("last_checked", now).apply()
-        return checked.active
+    fun canCheckout():Boolean{
+        val now=System.currentTimeMillis()
+        if(mode=="offline"){
+            val valid=LicenseManager.evaluate(activeKey,deviceId,now,prefs.getLong("last_checked",0)).active
+            if(valid&&now>prefs.getLong("last_checked",0))prefs.edit().putLong("last_checked",now).apply()
+            return valid
+        }
+        return mode=="cloud"&&cloudVerified&&
+            (now-cloudCheckedAt in 0L..90000L)&&
+            BrewCloud.signedIn(ctx)&&db.binding()!=null
     }
-    if (!status.active || showRenewal) {
-        ActivationScreen(deviceId, status, showRenewal && status.active, onCancel = { showRenewal = false }, onActivate = { code -> activate(code) })
-    } else BrewPosApp(licenseStatus = status, onManageLicense = { showRenewal = true }, canCheckout = { canCheckout() })
+    when{
+        mode.isBlank()->AccessModeScreen(deviceId,onCloud={changeMode("cloud")},
+            onOffline={changeMode("offline")})
+        mode=="offline"&&!offline.active->ActivationScreen(deviceId,offline,false,
+            onCancel={changeMode("")},onActivate={activate(it)})
+        mode=="offline"->BrewPosApp(offline,onManageLicense={changeMode("")},
+            canCheckout={canCheckout()},accessMode="offline")
+        mode=="cloud"&&(!cloudVerified||db.binding()==null)->{
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().background(Color.White).padding(8.dp),
+                    horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+                    TextButton(onClick={changeMode("")}){Text("← Choose access mode")}
+                    Text(cloudMessage,color=Leaf,fontSize=11.sp)
+                }
+                CloudScreen(ctx,db,onUpdated={tick=System.currentTimeMillis()})
+            }
+        }
+        mode=="cloud"->BrewPosApp(LicenseManager.Status(true,plan="CLOUD "+cloudPlan),
+            onManageLicense={changeMode("")},canCheckout={canCheckout()},accessMode="cloud")
+        else->AccessModeScreen(deviceId,onCloud={changeMode("cloud")},
+            onOffline={changeMode("offline")})
+    }
+}
+
+@Composable
+private fun AccessModeScreen(deviceId:String,onCloud:()->Unit,onOffline:()->Unit){
+    Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState())
+        .padding(horizontal=22.dp,vertical=25.dp),verticalArrangement=Arrangement.spacedBy(18.dp)){
+        Text("☕  BREWPOS",fontSize=27.sp,fontWeight=FontWeight.Black,color=Coffee)
+        Text("Welcome to BrewPOS",fontSize=29.sp,fontWeight=FontWeight.Black,color=Coffee)
+        Text("Choose how you'll run your café",color=Cocoa,fontSize=15.sp)
+        Surface(Modifier.fillMaxWidth().clickable(onClick=onCloud),
+            color=Leaf,shape=RoundedCornerShape(24.dp),shadowElevation=3.dp){
+            Column(Modifier.padding(25.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+                Text("☁",fontSize=31.sp,color=Color.White)
+                Text("Cloud POS  →",fontSize=24.sp,fontWeight=FontWeight.Black,color=Color.White)
+                Text("Sign in with your approved café account. Cloud inventory, staff, branches and kiosk orders.",
+                    fontSize=13.sp,color=Color(0xFFE7F0E9),lineHeight=20.sp)
+                Text("Internet and account approval required for checkout",
+                    fontSize=11.sp,color=Color(0xFFD0E9D8))
+            }
+        }
+        Surface(Modifier.fillMaxWidth().clickable(onClick=onOffline),color=Color.White,
+            shape=RoundedCornerShape(24.dp),shadowElevation=3.dp){
+            Column(Modifier.padding(25.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+                Text("🔑",fontSize=31.sp)
+                Text("Offline POS  →",fontSize=24.sp,fontWeight=FontWeight.Black,color=Coffee)
+                Text("Use a signed device license. Keep selling with local SQLite when the internet is down.",
+                    color=Cocoa,fontSize=13.sp,lineHeight=20.sp)
+                Text("Device-bound BP1 license required",color=Leaf,fontSize=11.sp)
+            }
+        }
+        Text("Device ID: "+deviceId,fontSize=11.sp,color=Cocoa)
+        Text("Switching modes does not delete receipts or reassign pending sales between branches.",
+            fontSize=11.sp,color=Cocoa)
+    }
 }
 
 @Composable
@@ -192,7 +271,7 @@ private fun ActivationScreen(
 }
 
 @Composable
-private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: () -> Unit, canCheckout: () -> Boolean) {
+private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: () -> Unit, canCheckout: () -> Boolean, accessMode:String) {
     val context = LocalContext.current
     val db = remember { StoreDb(context.applicationContext) }
     val prefs = remember { context.getSharedPreferences("shop_prefs", Context.MODE_PRIVATE) }
@@ -208,7 +287,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     var allProducts by remember { mutableStateOf(db.products(includeArchived = true)) }
     var allSales by remember { mutableStateOf(db.sales()) }
     val cart = remember { mutableStateListOf<CartLine>() }
-    var tab by remember { mutableStateOf("POS") }
+    var tab by remember { mutableStateOf(if(accessMode=="cloud")"Cloud" else "POS") }
     val isWide = LocalConfiguration.current.screenWidthDp >= 700
     var cartOnPhone by remember { mutableStateOf(false) }
     var customizing by remember { mutableStateOf<Product?>(null) }
@@ -380,7 +459,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                                 val discount = parseMoney(discountText)
                                 val tendered = if (method == "Cash") parseMoney(tenderText) else 0
                                 if (discount == null || (method == "Cash" && tendered == null)) alert("Enter valid payment amounts")
-                                else if (!canCheckout()) alert("License expired. Renew the activation code before checkout.")
+                                else if (!canCheckout()) alert(if(accessMode=="cloud")"Cloud account verification required. Open Cloud to check branch setup." else "Offline license expired. Renew to checkout.")
                                     else runCatching { db.checkout(cart.toList(), service, method, discount, tendered ?: 0, note) }
                                     .onSuccess { afterSale(it) }
                                     .onFailure { alert(it.message ?: "Checkout failed") }
@@ -394,7 +473,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                                     val discount = parseMoney(discountText)
                                     val tendered = if (method == "Cash") parseMoney(tenderText) else 0
                                     if (discount == null || (method == "Cash" && tendered == null)) alert("Enter valid payment amounts")
-                                    else if (!canCheckout()) alert("License expired. Renew the activation code before checkout.")
+                                    else if (!canCheckout()) alert(if(accessMode=="cloud")"Cloud account verification required. Open Cloud to check branch setup." else "Offline license expired. Renew to checkout.")
                                     else runCatching { db.checkout(cart.toList(), service, method, discount, tendered ?: 0, note) }
                                         .onSuccess { cartOnPhone = false; afterSale(it) }
                                         .onFailure { alert(it.message ?: "Checkout failed") }
