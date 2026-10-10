@@ -62,11 +62,23 @@ async function checkedOwner(req: Request): Promise<string | null> {
   if (!uuid(user?.id) || !user?.email_confirmed_at) return null;
   // Backward-compatible legacy explicit owner UUID; never elevate based on email text.
   if (uuid(ownerId) && user.id === ownerId) return user.id;
-  // Private allowlist: only service_role can query this table, and the signed-in
-  // Auth principal must have a matching ACTIVE UUID entry. A failed lookup denies.
-  const matches = await rows("brew_owner_accounts?select=user_id&user_id=eq."+
-    user.id+"&is_active=eq.true&limit=1");
-  return matches.length === 1 && matches[0].user_id === user.id ? user.id : null;
+  // Existing Auth UUID authorization; never automatically re-enable a disabled owner.
+  const matches = await rows("brew_owner_accounts?select=user_id,is_active&user_id=eq."+
+    user.id+"&limit=1");
+  if (matches.length) return matches.length === 1 && matches[0].is_active === true ? user.id : null;
+
+  // First-time invited owner: atomically redeem ONLY an existing private invitation.
+  // The SQL function independently cross-checks auth.users.id, verified email
+  // and expiry. No email/role submitted by a public client is trusted.
+  const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
+  if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return null;
+  const claim = await api("rpc/brew_redeem_owner_invitation",{
+    method:"POST",
+    body:JSON.stringify({verified_user_id:user.id,verified_email:email})
+  });
+  if (!claim.ok) return null;
+  const accepted = await claim.json();
+  return accepted === true ? user.id : null;
 }
 function integerCentavos(v: unknown): number {
   const n = Number(v);
