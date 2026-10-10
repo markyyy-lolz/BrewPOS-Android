@@ -115,6 +115,7 @@ private fun ActivationScreen(
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
+    var showSignup by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().background(Cream)) {
         val wide = maxWidth >= 760.dp
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
@@ -174,6 +175,9 @@ private fun ActivationScreen(
                             enabled = input.isNotBlank(), shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.fillMaxWidth().height(54.dp)
                         ) { Text("Activate BrewPOS →", fontWeight = FontWeight.Bold) }
+                        OutlinedButton(onClick={showSignup=true},modifier=Modifier.fillMaxWidth()) {
+                            Text("Create account • Email OTP")
+                        }
                         if (canCancel) TextButton(onClick = onCancel) { Text("Back to POS") }
                         Text("Lifetime, monthly and trial activation. 72-hour grace applies to expired time-limited plans.",
                             color = Cocoa, fontSize = 11.sp, textAlign = TextAlign.Center)
@@ -182,6 +186,13 @@ private fun ActivationScreen(
             }
         }
     }
+    if(showSignup) BrewSignupDialog(
+        onClose={showSignup=false},
+        onRegistered={
+            showSignup=false
+            error="Account registered and pending Azurate approval. You still need a signed activation code to start selling."
+        }
+    )
 }
 
 @Composable
