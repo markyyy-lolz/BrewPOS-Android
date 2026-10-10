@@ -8,6 +8,7 @@ import androidx.work.*
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -28,6 +29,12 @@ import org.json.JSONObject
  */
 object BrewCloud {
     private const val BASE = "https://rfxzbuocxersgbshczbj.supabase.co"
+    // GitHub Pages is the public redirect, never a development-only localhost server.
+    // Still requires an allow-listed redirect URL and OTP templates in Supabase Auth.
+    private const val PUBLIC_AUTH_REDIRECT =
+        "https://markyyy-lolz.github.io/BrewPOS-Android/signup.html"
+    private fun otpEndpoint() = BASE + "/auth/v1/otp?redirect_to=" +
+        URLEncoder.encode(PUBLIC_AUTH_REDIRECT, "UTF-8")
     private const val PUBLISHABLE_KEY = "sb_publishable_CR-CJKna_rcjQi7gg1CZGQ__DnXI6Lb"
     private const val PREFS = "brewpos_cloud"
     private val lock = Mutex()
@@ -110,6 +117,49 @@ object BrewCloud {
     suspend fun login(ctx:Context,email:String,password:String):Unit = withContext(Dispatchers.IO) {
         val res=request(authPath("password"),JSONObject().put("email",email.trim()).put("password",password))
         store(ctx,parseTokens(res))
+    }
+    /** Passwordless email OTP: cannot register arbitrary Auth users from the tablet. */
+    suspend fun sendLoginCode(email: String): Unit = withContext(Dispatchers.IO) {
+        val normalized = email.trim().lowercase()
+        require(normalized.contains("@") && normalized.length <= 254) { "Enter a valid email address" }
+        request(otpEndpoint(), JSONObject()
+            .put("email", normalized)
+            .put("create_user", false))
+        Unit
+    }
+    suspend fun loginWithCode(ctx: Context, email: String, code: String): Unit = withContext(Dispatchers.IO) {
+        val normalized = email.trim().lowercase()
+        require(code.matches(Regex("^[0-9]{6}$"))) { "Enter the numeric email verification code" }
+        val response = request(BASE + "/auth/v1/verify", JSONObject()
+            .put("email", normalized)
+            .put("token", code)
+            .put("type", "email"))
+        store(ctx, parseTokens(response))
+    }
+    /** Customer self-registration: creates ONLY an unprivileged Supabase Auth identity. */
+    suspend fun sendRegistrationCode(email: String): Unit = withContext(Dispatchers.IO) {
+        val normalized = email.trim().lowercase()
+        require(normalized.length in 5..254 && normalized.contains("@")) { "Enter a valid email" }
+        request(otpEndpoint(), JSONObject()
+            .put("email", normalized)
+            .put("create_user", true))
+        Unit
+    }
+    /** Called only after OTP was verified. The server checks token/email and saves pending review. */
+    suspend fun requestAccountApproval(ctx: Context, business: String, deviceId: String): JSONObject =
+        withContext(Dispatchers.IO) {
+            val name = business.trim()
+            require(name.length in 2..80) { "Enter a business name (2-80 characters)" }
+            require(deviceId.matches(Regex("^[0-9a-fA-F]{16}$"))) { "Invalid Android device ID" }
+            request(syncPath(), JSONObject().put("action","request_account")
+                .put("business_name",name)
+                .put("android_device_id",deviceId.lowercase()), validToken(ctx))
+        }
+    suspend fun registerWithCode(ctx: Context, email: String, code: String,
+                                 business: String, deviceId: String): JSONObject {
+        // Existing loginWithCode verifies OTP and encrypts the short-lived Auth session.
+        loginWithCode(ctx,email,code)
+        return requestAccountApproval(ctx,business,deviceId)
     }
     private fun validToken(ctx:Context):String {
         val saved=loaded(ctx) ?: throw IOException("Sign into BrewPOS Cloud first")

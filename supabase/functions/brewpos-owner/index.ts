@@ -102,7 +102,146 @@ async function issueLicense(input: Record<string, unknown>, userId: string) {
     expires_at:payload.expires_at, notice:"Save this code securely; it is shown once only."
   };
 }
+// Account creation is an Azurate-owner-only operation. A customer gets a role ONLY
+// after being invited to Auth and associated with a real, server-recorded BP1 issue.
+const validEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) && s.length <= 254;
+async function insertOne(table: string, data: Record<string,unknown>) {
+  const r=await api(table+"?select=*", {
+    method:"POST", headers:{"prefer":"return=representation"}, body:JSON.stringify(data)
+  });
+  if(!r.ok)throw Error("Could not save "+table+"; no access was granted");
+  const list=await r.json();
+  if(!Array.isArray(list)||list.length!==1)throw Error("Unexpected response while creating "+table);
+  return list[0] as Record<string,unknown>;
+}
+async function getIssue(value: unknown) {
+  if(!uuid(value))throw Error("Choose a valid signed license issuance");
+  const issues=await rows("brew_activation_issues?select=id,customer_name,android_device_id,plan,expires_at&id=eq."+value);
+  if(issues.length!==1)throw Error("This activation has not been issued by Azurate");
+  const issue=issues[0];
+  if(issue.expires_at && new Date(String(issue.expires_at)).getTime()<=Date.now())
+    throw Error("Expired licenses cannot be assigned to an account");
+  return issue;
+}
+async function provisionCustomer(input: Record<string,unknown>, userId: string) {
+  const email=String(input.email||"").trim().toLowerCase();
+  if(!validEmail(email))throw Error("Enter a valid customer email address");
+  const issue=await getIssue(input.license_issue_id);
+  if((await rows("brew_customer_accounts?select=id&license_issue_id=eq."+issue.id)).length)
+    throw Error("This activation is already assigned to an account");
+  if((await rows("brew_customer_accounts?select=id&email=eq."+encodeURIComponent(email))).length)
+    throw Error("Email already has a BrewPOS customer account; use Change License");
+  // A customer-created Auth account is strictly pending: it cannot choose
+  // plan, organization or role. Approval binds it to this real, issued BP1.
+  const requests=await rows("brew_signup_requests?select=user_id,email,business_name,android_device_id,status&email=eq."+
+      encodeURIComponent(email));
+  if(requests.length>1)throw Error("Conflicting signup requests");
+  const signup=requests[0];
+  if(signup){
+    if(signup.status!=="pending")throw Error("Customer signup is not pending");
+    if(String(signup.business_name).trim().toLowerCase()!==
+       String(issue.customer_name).trim().toLowerCase())
+      throw Error("Signed license customer name differs from registered business");
+    if(String(signup.android_device_id)!==String(issue.android_device_id))
+      throw Error("Signed license is for another Android device");
+    if(!uuid(signup.user_id))throw Error("Invalid customer account identity");
+  }
+  // Dedicated merchant tenant, NEVER use the shared demo organization.
+  // Stable slug lets an administrator safely find partial onboarding work.
+  const slug="brew-license-"+String(issue.id);
+  let organizations=await rows("brew_organizations?select=id,name&slug=eq."+slug);
+  if(!organizations.length)organizations=[await insertOne("brew_organizations",{
+    name:String(issue.customer_name),slug
+  })];
+  const orgId=String(organizations[0].id);
+  let branches=await rows("brew_branches?select=id&organization_id=eq."+orgId+"&name=eq.Main%20Branch");
+  if(!branches.length)branches=[await insertOne("brew_branches",{
+    organization_id:orgId,name:"Main Branch",timezone:"Asia/Manila"
+  })];
+  const branchId=String(branches[0].id);
+  let invitedUser: string;
+  if(signup){
+    // Confirm existing customer-created identity at Auth Admin, never accept
+    // an email or user UUID merely asserted by the public Android device.
+    const admin=await fetch(base+"/auth/v1/admin/users/"+String(signup.user_id),{
+      headers:{"apikey":serviceKey,"authorization":"Bearer "+serviceKey},
+      cache:"no-store"
+    });
+    if(!admin.ok)throw Error("Could not verify registered Auth identity");
+    const verified=await admin.json();
+    const authUser=verified?.user ?? verified;
+    if(authUser?.id!==signup.user_id || !authUser.email_confirmed_at ||
+       String(authUser.email||"").trim().toLowerCase()!==email)
+      throw Error("Customer must verify signup email before approval");
+    invitedUser=String(signup.user_id);
+  } else {
+    // Existing owner-directed onboarding: create a passwordless user who
+    // must prove email ownership with an OTP before registering a tablet.
+    const createUser=await fetch(base+"/auth/v1/admin/users",{
+      method:"POST",headers:{"apikey":serviceKey,"authorization":"Bearer "+serviceKey,
+        "content-type":"application/json"},
+      body:JSON.stringify({email,email_confirm:false})
+    });
+    if(!createUser.ok)throw Error("Could not create Auth user. If customer registered, approve their pending signup.");
+    const invited=await createUser.json();
+    if(!uuid(invited?.id))throw Error("Auth creation did not provide a valid user ID");
+    invitedUser=String(invited.id);
+  }
+  // If a retry happens after partial onboarding, avoid duplicate memberships.
+  const existing=await rows("brew_memberships?select=id&user_id=eq."+invitedUser+"&organization_id=eq."+orgId);
+  if(!existing.length)await insertOne("brew_memberships",{
+    user_id:invitedUser,organization_id:orgId,role:"owner",is_active:true
+  });
+  const account=await insertOne("brew_customer_accounts",{
+    email,user_id:invitedUser,organization_id:orgId,branch_id:branchId,
+    license_issue_id:issue.id,plan:issue.plan,expires_at:issue.expires_at,
+    status:"invited",created_by:userId
+  });
+  if(signup){
+    const review=await api("brew_signup_requests?user_id=eq."+invitedUser,{
+      method:"PATCH",headers:{"prefer":"return=minimal"},
+      body:JSON.stringify({status:"approved",reviewed_at:new Date().toISOString(),
+        updated_at:new Date().toISOString()})
+    });
+    if(!review.ok)throw Error("Account created but signup approval needs administrator review");
+  }
+  return {created:true,id:account.id,email,plan:issue.plan,
+    organization_id:orgId,branch_id:branchId,
+    notice:"Account created. Customer signs in from BrewPOS Android using an email OTP, then registers the tablet."};
+}
+async function changeCustomerLicense(input: Record<string,unknown>) {
+  if(!uuid(input.account_id))throw Error("Choose a customer account");
+  const issue=await getIssue(input.license_issue_id);
+  const current=await rows("brew_customer_accounts?select=id,email,organization_id,license_issue_id&id=eq."+input.account_id);
+  if(current.length!==1)throw Error("Customer account not found");
+  if((await rows("brew_customer_accounts?select=id&license_issue_id=eq."+issue.id)).some(x=>x.id!==input.account_id))
+    throw Error("License already belongs to another account");
+  const row=current[0];
+  // Require same customer identity. Issuing a new activation for a DIFFERENT
+  // customer must never silently transfer account or expose tenant data.
+  const orgs=await rows("brew_organizations?select=name&id=eq."+row.organization_id);
+  if(orgs.length!==1||String(orgs[0].name).trim().toLowerCase()!==String(issue.customer_name).trim().toLowerCase())
+    throw Error("License customer name does not match this account's business");
+  const r=await api("brew_customer_accounts?id=eq."+input.account_id,{
+    method:"PATCH",headers:{"prefer":"return=representation"},
+    body:JSON.stringify({license_issue_id:issue.id,plan:issue.plan,expires_at:issue.expires_at,updated_at:new Date().toISOString()})
+  });
+  if(!r.ok)throw Error("Account plan could not be updated");
+  const updated=await r.json();
+  if(!Array.isArray(updated)||updated.length!==1)throw Error("Account update was not confirmed");
+  return {updated:true,email:row.email,plan:issue.plan,expires_at:issue.expires_at,
+    notice:"Cloud account plan updated. The tablet also needs the newly signed BP1 activation code."};
+}
+
 async function route(action: string, input: Record<string,unknown>, userId: string) {
+  if(action==="signup_requests"){
+    return {requests:await rows("brew_signup_requests?select=user_id,email,business_name,android_device_id,status,requested_at&order=requested_at.desc&limit=100")};
+  }
+  if (action === "accounts") {
+    return {accounts:await rows("brew_customer_accounts?select=id,email,organization_id,branch_id,license_issue_id,plan,expires_at,status,created_at&order=created_at.desc&limit=100")};
+  }
+  if (action === "provision_customer") return await provisionCustomer(input,userId);
+  if (action === "change_customer_license") return await changeCustomerLicense(input);
   if (action === "overview") {
     const [sales,orgs,devices,licenses] = await Promise.all([
       rows("brew_sales?select=id,total_centavos,received_at&order=received_at.desc&limit=100"),

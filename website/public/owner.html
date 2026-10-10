@@ -33,6 +33,7 @@
 <button data-tab="overview" class="active"><span>▦</span> Overview</button>
 <button data-tab="activation"><span>◈</span> Activation generator</button>
 <button data-tab="licenses"><span>▤</span> Issued licenses</button>
+<button data-tab="accounts"><span>♙</span> Client accounts</button>
 <button data-tab="devices"><span>▣</span> Devices</button>
 <button data-tab="sales"><span>▥</span> Cloud sales</button>
 </nav>
@@ -68,6 +69,37 @@
 </div>
 </div></section>
 <section id="licenses" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Issued license history</h2><p>Last 100 owner-issued activations · Codes themselves are not stored</p></div></div><div class="table-scroll"><table><thead><tr><th>Customer</th><th>Android Device ID</th><th>Plan</th><th>Expiration</th><th>Issued</th></tr></thead><tbody id="licensesRows"></tbody></table></div></div></section>
+<section id="accounts" class="view" hidden>
+<div class="panel"><div class="panel-heading"><div><h2>Email-verified signups awaiting approval</h2><p>These customers created an account using Android email OTP. Registration alone does not grant a paid plan.</p></div></div>
+<div class="table-scroll"><table><thead><tr><th>Email</th><th>Business</th><th>Android ID</th><th>Status</th><th>Requested</th></tr></thead><tbody id="signupRows"></tbody></table></div>
+<p class="fine">Select a pending signup below, issue a BP1 activation for exactly this business/device, then assign the signed license.</p>
+<label class="signup-select">Choose pending signup
+<select id="signupSelection"><option value="">Select an email-verified registration</option></select></label>
+</div>
+<div class="columns accounts-list">
+<div class="panel">
+<div class="panel-heading"><div><h2>Create client cloud account</h2><p>Owner-created passwordless accounts bound to previously issued BP1 licenses</p></div><span class="pill">Owner only</span></div>
+<form id="accountCreateForm" class="issue-form">
+<label>Client email address<input type="email" id="accountEmail" maxlength="254" placeholder="owner@coffeeshop.ph" required autocomplete="off"></label>
+<label>Issued license<select id="accountIssue" required><option value="">Select issued BP1 activation</option></select></label>
+<p class="fine">A distinct customer organization and branch will be created. The customer signs in on BrewPOS Android using a one-time email code. No customer password or activation key is stored by this website.</p>
+<button id="accountCreateButton" class="primary full" type="submit">Create client cloud account</button>
+</form>
+</div>
+<div class="panel">
+<div class="panel-heading"><div><h2>Change client license</h2><p>Pick an existing customer and a new signed activation for the same business</p></div></div>
+<form id="accountPlanForm" class="issue-form">
+<label>Existing client account<select id="accountToEdit" required><option value="">Select account</option></select></label>
+<label>Replacement signed license<select id="accountReplacementIssue" required><option value="">Select valid issued license</option></select></label>
+<p class="fine">Plan changes require a newly issued BP1 token. Existing offline activations cannot be revoked remotely. Do not share another merchant's organization.</p>
+<button id="accountUpdateButton" class="primary full" type="submit">Apply purchased license to account</button>
+</form>
+</div>
+</div>
+<div class="panel accounts-list"><div class="panel-heading"><div><h2>Registered customer accounts</h2><p>Owner-created customer logins, organization memberships and license plans</p></div></div>
+<div class="table-scroll"><table><thead><tr><th>Email</th><th>Plan</th><th>Valid until</th><th>Status</th><th>Created</th></tr></thead><tbody id="accountRows"></tbody></table></div>
+</div>
+</section>
 <section id="devices" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Registered cloud devices</h2><p>Latest 100 authorized BrewPOS installations</p></div></div><div class="table-scroll"><table><thead><tr><th>Device</th><th>Installation ID</th><th>Status</th><th>Last seen</th></tr></thead><tbody id="devicesRows"></tbody></table></div><p class="fine">Android Device ID for offline licensing and cloud installation UUID are different identities. This dashboard does not imply that a signed offline license can be remotely revoked.</p></div></section>
 <section id="sales" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Synced cloud sales</h2><p>Last 100 records only • No sample transactions</p></div></div><div class="table-scroll"><table><thead><tr><th>Receipt</th><th>Received</th><th>Payment</th><th>Amount</th><th>Status</th></tr></thead><tbody id="salesRows"></tbody></table></div></div></section>
 <footer class="footer">BrewPOS by Azurate Software Solutions · Owner access only · Actual cloud records, no simulated data</footer>
