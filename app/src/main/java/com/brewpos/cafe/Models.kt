@@ -67,7 +67,7 @@ data class Sale(
     val tendered: Int,
     val change: Int,
     val notes: String,
-    val status: String = "Queued"
+    val status: String = "Served"
 )
 
 data class SaleLine(
