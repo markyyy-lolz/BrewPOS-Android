@@ -65,7 +65,7 @@ jobs:
         if: success() && github.ref == 'refs/heads/feature/android-premium-ui-refresh' && github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v2.0.0-android-premium-ui-preview.1
+          RELEASE_TAG: v2.0.0-android-client-ready-preview.2
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -78,15 +78,15 @@ jobs:
           - Cashier: café sidebar, adaptive landscape dual-pane checkout, polished catalog, quantity controls and branded cart.
           - Kiosk: premium manager pairing, welcome screen, dine-in/takeout selector, menu category chips, product cards and cart flow.
           
-          **Not a production checkout release.** The existing dedicated kiosk backend is not deployed, and live QR Ph payments remain unavailable. Android cashier offline SQLite ordering and branch inventory logic are inherited from existing development work. Real product photos require approved image assets and menu image metadata; cards currently use category illustrations. Do not claim live payment verification, cloud kiosk operation or physical printer acceptance.
+          **Not a production checkout release.** Kiosk tables and authenticated Edge API are deployed, but real ordering requires an approved café owner/manager account, branch, registered Android devices and real product menu. Live QR Ph payments remain unavailable. Android cashier offline SQLite ordering and branch inventory logic are inherited from existing development work. Real product photos require approved image assets and menu image metadata; cards currently use category illustrations. Do not claim live payment verification, cloud kiosk operation or physical printer acceptance.
           
           DEBUG-SIGNED TEST APKs ONLY. Install on a non-production tablet. Back up existing cashier local receipts and stock records before installation; do not clear app data. For the black Overlay #1 bar seen in screenshots, disable Android Developer Options > Simulate secondary displays > None.
           
-          Source: feature/android-premium-ui-refresh, PR #13. Details: docs/ANDROID_PREMIUM_UI_REFRESH.md.
+          The owner signing key is now stored in protected Supabase Vault; licensed cashier devices must receive a newly signed BP1 code from the authenticated owner activation generator. This APK verifies the new signing public key and retains compatibility with old issued signatures. The client-facing pairing and cashier activation views are now compact and scrollable on portrait Android tablets.\n          \n          Source: feature/android-premium-ui-refresh, PR #13. Details: docs/ANDROID_PREMIUM_UI_REFRESH.md.
           NOTES
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --prerelease \
-              --title "BrewPOS Android Premium UI — Development Preview 1" \
+              --title "BrewPOS Android — Client UI & Activation Fix Preview 2" \
               --notes-file /tmp/brewpos-premium-notes.md
           fi
           gh release upload "$RELEASE_TAG" dist/BrewPOS-Android-Cashier-PremiumUI-DEV.apk \
