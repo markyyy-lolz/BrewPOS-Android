@@ -71,7 +71,7 @@ async function checkedOwner(req: Request): Promise<string | null> {
   // The SQL function independently cross-checks auth.users.id, verified email
   // and expiry. No email/role submitted by a public client is trusted.
   const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
-  if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return null;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
   const claim = await api("rpc/brew_redeem_owner_invitation",{
     method:"POST",
     body:JSON.stringify({verified_user_id:user.id,verified_email:email})
