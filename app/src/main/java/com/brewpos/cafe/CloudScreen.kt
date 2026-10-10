@@ -46,7 +46,7 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
         Text("Secure hybrid sync · Cashier stays fully offline even when cloud is unavailable.",color=Color(0xFF756458))
         Surface(color=Color.White,shape=RoundedCornerShape(22.dp)) {
             Column(Modifier.fillMaxWidth().padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                Text("$pending pending local sale(s)",fontWeight=FontWeight.Bold,fontSize=20.sp)
+                Text("$pending pending local event(s)",fontWeight=FontWeight.Bold,fontSize=20.sp)
                 Text(if(linked)"Tablet linked to a branch" else "This tablet is not linked to a cloud branch yet",
                     color=Color(0xFF756458),fontSize=13.sp)
                 Text(status,fontSize=12.sp,color=Color(0xFF756458))
@@ -96,11 +96,11 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
                         busy=true
                         scope.launch {
                             runCatching { BrewCloud.uploadPending(ctx) }
-                                .onSuccess { status="$it sale(s) uploaded";pending=db.pendingSyncCount() }
+                                .onSuccess { status="$it event(s) uploaded; catalog refreshed when queue is clear";pending=db.pendingSyncCount() }
                                 .onFailure { status=it.message ?: "Cloud unavailable; sales remain queued" }
                             busy=false
                         }
-                    }) { Text("Sync pending transactions now") }
+                    }) { Text("Sync transactions & download menu") }
                     TextButton(onClick={
                         BrewCloud.signOut(ctx);loggedIn=false;linked=false;response=null
                         status="Signed out. All offline transactions are preserved."

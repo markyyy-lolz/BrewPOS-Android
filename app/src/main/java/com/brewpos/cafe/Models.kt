@@ -13,8 +13,14 @@ data class Product(
     val stock: Int,
     val trackStock: Boolean = true,
     val active: Boolean = true,
-    val icon: String = "☕"
-)
+    val icon: String = "☕",
+    val cloudId: String? = null,
+    val cloudVersion: Long = 0,
+    /** Exact thousandths of one menu item, for lossless cloud stock reconciliation. */
+    val stockMilli: Long = stock.toLong() * 1000L
+) {
+    val stockLabel: String get() = java.math.BigDecimal.valueOf(stockMilli, 3).stripTrailingZeros().toPlainString()
+}
 
 data class Extra(val name: String, val priceCents: Int)
 
@@ -91,3 +97,8 @@ fun parseMoney(input: String): Int? {
     if (cents.signum() < 0 || cents > java.math.BigDecimal(Int.MAX_VALUE)) return null
     return try { cents.intValueExact() } catch (_: ArithmeticException) { null }
 }
+
+/** Refuse precision loss: the shared cloud inventory protocol stores at most 3 decimals. */
+fun parseStockMilli(input: String): Long? = try {
+    input.trim().toBigDecimalOrNull()?.movePointRight(3)?.longValueExact()
+} catch (_: ArithmeticException) { null }

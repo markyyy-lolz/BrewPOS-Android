@@ -212,6 +212,10 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     val snackbar = remember { SnackbarHostState() }
     fun refresh() { allProducts = db.products(includeArchived = true); allSales = db.sales() }
     fun alert(message: String) { scope.launch { snackbar.showSnackbar(message) } }
+    LaunchedEffect(tab) {
+        // Show catalog/stock updates after cloud setup and during an open cashier session.
+        while(true) { refresh();delay(5_000) }
+    }
     val savePdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(requireNotNull(pendingPdf)) } ?: error("Cannot write file") }
@@ -277,7 +281,10 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         cart.clear()
         refresh()
         receipt = saved
-        BrewCloud.queueNow(context)
+        // Checkout has already committed locally; scheduling failure cannot undo it.
+        runCatching { BrewCloud.queueNow(context) }.onFailure {
+            alert("Sale saved locally. Open Cloud and sync manually when available.")
+        }
         if (autoPrintBoth) thermalPrint(saved, "both", automatic = true)
         else alert("Sale completed. Print both slips from the receipt screen.")
     }
@@ -421,7 +428,9 @@ private fun SectionTitle(title: String, subtitle: String = "") {
 private fun ProductCatalog(products: List<Product>, modifier: Modifier, onProduct: (Product) -> Unit) {
     var search by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("All") }
-    val categories = listOf("All", "Coffee", "Non-Coffee", "Tea", "Pastries")
+    // Approved cloud catalogs can have café-defined categories, not only preset drinks.
+    val categories = listOf("All") + products.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
+    LaunchedEffect(categories) { if (category !in categories) category = "All" }
     val filtered = products.filter {
         (category == "All" || it.category == category) && it.name.contains(search, ignoreCase = true)
     }
@@ -453,7 +462,7 @@ private fun ProductCatalog(products: List<Product>, modifier: Modifier, onProduc
                             maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(8.dp))
                         Text(peso(p.priceCents.toLong()), fontWeight = FontWeight.ExtraBold, color = Coffee, fontSize = 17.sp)
-                        Text(if (!p.trackStock) "Available" else if (p.stock == 0) "Out of stock" else "${p.stock} left",
+                        Text(if (!p.trackStock) "Available" else if (p.stockMilli < 0L) "${p.stockLabel} (shortage)" else if (p.stockMilli == 0L) "Out of stock" else "${p.stockLabel} left",
                             color = if (p.trackStock && p.stock < 6) Color(0xFFB04B2E) else Leaf, fontSize = 11.sp)
                     }
                 }
@@ -502,7 +511,7 @@ private fun CustomizeDialog(product: Product, existingCount: Int, onClose: () ->
                     TextButton(onClick = { if (qty < 99) qty++ }) { Text("+", fontSize = 22.sp) }
                 }
                 Text("Total: ${peso((unit.toLong() * qty))}", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                if (product.trackStock) Text("In stock: ${product.stock}; in cart: $existingCount", color = Cocoa, fontSize = 12.sp)
+                if (product.trackStock) Text("In stock: ${product.stockLabel}; in cart: $existingCount", color = Cocoa, fontSize = 12.sp)
             }
         },
         confirmButton = {
@@ -660,7 +669,7 @@ private fun MenuView(products: List<Product>, onAdd: () -> Unit, onEdit: (Produc
                         Text(p.icon, fontSize = 31.sp, modifier = Modifier.padding(end = 10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(p.name, fontWeight = FontWeight.Bold)
-                            Text("${p.category} • ${if (p.active) (if (p.trackStock) "${p.stock} units" else "Untracked stock") else "Archived"}", color = Cocoa, fontSize = 11.sp)
+                            Text("${p.category} • ${if (p.active) (if (p.trackStock) "${p.stockLabel} units" else "Untracked stock") else "Archived"}", color = Cocoa, fontSize = 11.sp)
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text(peso(p.priceCents.toLong()), fontWeight = FontWeight.Bold)
@@ -689,20 +698,22 @@ private fun MenuView(products: List<Product>, onAdd: () -> Unit, onEdit: (Produc
 private fun ProductEditor(product: Product?, onClose: () -> Unit, onSave: (Product) -> Unit) {
     var name by remember(product?.id) { mutableStateOf(product?.name ?: "") }
     var price by remember(product?.id) { mutableStateOf(product?.priceCents?.let { "%.2f".format(java.util.Locale.US, it / 100.0) } ?: "") }
-    var stock by remember(product?.id) { mutableStateOf(product?.stock?.toString() ?: "0") }
+    var stock by remember(product?.id) { mutableStateOf(product?.stockLabel ?: "0") }
     var category by remember(product?.id) { mutableStateOf(product?.category ?: "Coffee") }
     var icon by remember(product?.id) { mutableStateOf(product?.icon ?: "☕") }
     var trackStock by remember(product?.id) { mutableStateOf(product?.trackStock ?: true) }
     val priceCents = parseMoney(price)
-    val stockCount = stock.toIntOrNull()
+    val stockMilli = parseStockMilli(stock)
+    val stockCount = stockMilli?.let { Math.floorDiv(it,1000L) }
+        ?.takeIf { it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }?.toInt()
     AlertDialog(onDismissRequest = onClose, title = { Text(if (product == null) "Add product" else "Edit product") },
         text = {
             Column(Modifier.heightIn(max = 450.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Product name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(price, { price = it }, label = { Text("Regular price ₱") }, modifier = Modifier.fillMaxWidth(),
                     singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                OutlinedTextField(stock, { stock = it }, label = { Text("Stock (units)") }, modifier = Modifier.fillMaxWidth(),
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                OutlinedTextField(stock, { stock = it }, label = { Text("Stock (units, up to 3 decimals)") }, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 Text("Category", fontWeight = FontWeight.Bold)
                 Column {
                     listOf(listOf("Coffee", "Non-Coffee"), listOf("Tea", "Pastries")).forEach { group ->
@@ -721,9 +732,10 @@ private fun ProductEditor(product: Product?, onClose: () -> Unit, onSave: (Produ
         }, confirmButton = {
             Button(onClick = {
                 onSave(Product(id = product?.id ?: 0L, name = name.trim(), category = category,
-                    priceCents = priceCents ?: 0, stock = stockCount ?: 0,
+                    priceCents = priceCents ?: 0, stock = stockCount ?: 0, stockMilli = stockMilli ?: 0L,
+                    cloudId = product?.cloudId, cloudVersion = product?.cloudVersion ?: 0,
                     trackStock = trackStock, active = true, icon = icon.ifBlank { "☕" }.take(4)))
-            }, enabled = name.isNotBlank() && priceCents != null && stockCount != null && stockCount >= 0) { Text("Save") }
+            }, enabled = name.isNotBlank() && priceCents != null && stockCount != null && stockMilli != null && (stockMilli >= 0L || product?.cloudId != null)) { Text("Save") }
         }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
 }
 

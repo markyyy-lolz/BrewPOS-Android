@@ -7,3 +7,4 @@ local.properties
 *.apk
 *.aab
 .DS_Store
+node_modules/
