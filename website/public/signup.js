@@ -47,7 +47,7 @@ el("signupForm").addEventListener("submit",async e=>{
     }else{
       if(stage==="verify"){
         const token=el("otp").value.trim();
-        if(!/^[0-9]{6,8}$/.test(token))throw Error("Enter the 6–8 digit email OTP.");
+        if(!/^[0-9]{6}$/.test(token))throw Error("Enter the 6-digit email OTP.");
         const verified=await post("/auth/v1/verify",{email:details.email,token,type:"email"});
         if(!verified.access_token)throw Error("Email verification did not return an authenticated session.");
         access=verified.access_token;
