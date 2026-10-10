@@ -99,3 +99,28 @@ test("website and Android use exactly six digits and offer resend after a link-o
   assert.ok(dialog.includes("Resend 6-digit code"));
   assert.ok(screen.includes("Resend 6-digit code"));
 });
+
+test("OTP requests always use BrewPOS GitHub Pages redirect, never localhost",()=>{
+  const browser=root("website/public/signup.js");
+  const android=root("app/src/main/java/com/brewpos/cafe/BrewCloud.kt");
+  assert.ok(browser.includes("https://markyyy-lolz.github.io/BrewPOS-Android/signup.html"));
+  assert.ok(browser.includes('"/auth/v1/otp?redirect_to="+encodeURIComponent(GITHUB_SIGNUP)'));
+  assert.ok(browser.includes("await post(otpPath,{email,create_user:true})"));
+  assert.ok(android.includes("https://markyyy-lolz.github.io/BrewPOS-Android/signup.html"));
+  assert.ok(android.includes("URLEncoder.encode(PUBLIC_AUTH_REDIRECT"));
+  assert.ok(android.includes("request(otpEndpoint(), JSONObject()"));
+  assert.equal(browser.includes("localhost:3000"),false);
+  assert.equal(android.includes("localhost:3000"),false);
+});
+test("legacy Magic Link fallback sanitizes access and refresh fragments before UI",()=>{
+  const browser=root("website/public/signup.js");
+  assert.ok(browser.includes('fragment.get("access_token")'));
+  assert.ok(browser.includes('fragment.has("refresh_token")'));
+  assert.ok(browser.includes('history.replaceState(null,"",location.pathname+location.search)'));
+  assert.ok(browser.includes('setStage("link")'));
+  assert.ok(browser.includes('BASE+"/auth/v1/user"'));
+  assert.ok(browser.includes('identity.email_confirmed_at'));
+  assert.ok(browser.includes('action:"request_account"'));
+  assert.equal(browser.includes("localStorage"),false);
+  assert.equal(browser.includes("sessionStorage"),false);
+});
