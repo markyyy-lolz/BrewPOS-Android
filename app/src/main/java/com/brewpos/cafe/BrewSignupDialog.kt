@@ -32,6 +32,7 @@ fun BrewSignupDialog(onClose: () -> Unit, onRegistered: () -> Unit) {
     var code by remember { mutableStateOf("") }
     var sent by remember { mutableStateOf(false) }
     var submitted by remember { mutableStateOf(false) }
+    var otpVerified by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
 
@@ -68,7 +69,7 @@ fun BrewSignupDialog(onClose: () -> Unit, onRegistered: () -> Unit) {
                             modifier=Modifier.fillMaxWidth(),enabled=!busy)
                         TextButton(onClick={
                             sent=false;code="";message=""
-                        },enabled=!busy) { Text("Use another email") }
+                        },enabled=!busy && !otpVerified) { Text("Use another email") }
                     }
                     Text("Please check spam if no email arrives. OTP delivery requires BrewPOS Supabase Auth email configuration.",
                         fontSize=11.sp)
@@ -93,11 +94,19 @@ fun BrewSignupDialog(onClose: () -> Unit, onRegistered: () -> Unit) {
                     }
                 }) { Text(if(busy) "Sending…" else "Send verification code") }
             else Button(
-                enabled=!busy && code.length in 6..8,
+                enabled=!busy && (otpVerified || code.length in 6..8),
                 onClick={
                     busy=true;message=""
                     scope.launch {
-                        runCatching { BrewCloud.registerWithCode(ctx,email,code,business,deviceId) }
+                        runCatching {
+                            if(!otpVerified) {
+                                BrewCloud.loginWithCode(ctx,email,code)
+                                otpVerified=true
+                                code=""
+                            }
+                            // A failed network request can now safely retry without reusing a consumed OTP.
+                            BrewCloud.requestAccountApproval(ctx,business,deviceId)
+                        }
                             .onSuccess {
                                 code="";submitted=true
                                 message="Registration request sent. Check back after Azurate assigns your license."
@@ -106,7 +115,7 @@ fun BrewSignupDialog(onClose: () -> Unit, onRegistered: () -> Unit) {
                             .onFailure { message=it.message ?: "Verification or registration failed" }
                         busy=false
                     }
-                }) { Text(if(busy) "Verifying…" else "Verify OTP & create account") }
+                }) { Text(if(busy) "Verifying…" else if(otpVerified) "Retry account request" else "Verify OTP & create account") }
         },
         dismissButton = {
             if(!submitted) TextButton(onClick=onClose,enabled=!busy) { Text("Cancel") }
