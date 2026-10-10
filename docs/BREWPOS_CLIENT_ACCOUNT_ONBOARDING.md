@@ -1,5 +1,15 @@
 # BrewPOS customer account onboarding (development, not production enabled)
 
+## Self-registration: Create Account + OTP (October 2026)
+
+- Customers can open **Create account • Email OTP** in Android's activation screen before they buy a license, in Android Cloud, or on the public **GitHub Pages `/signup.html`** screen.
+- Enter business name, email and exact 16-hex Android Device ID shown in BrewPOS. A new Supabase Auth identity is created through `/auth/v1/otp` with `create_user=true`. This is only an email identity, **not** a merchant role or activated device.
+- Customer enters the emailed numeric code through `/auth/v1/verify` (`type=email`). A server-side `request_account` action verifies the identity and `email_confirmed_at`, then writes a private pending application to `brew_signup_requests`. Public clients cannot read or change this table directly.
+- Owner Dashboard → Client Accounts shows pending business/email/device applications. Azurate issues a *real* signed BP1 code to exactly that business and device, then selects the customer's email in the Client Accounts form to approve. The backend confirms the signup user's email through Supabase Auth Admin before creating an organization, branch, membership and license-bound customer account.
+- **No OTP bypass, automatic Trial/Lifetime assignment, publicly writable license table, or service-role key in Android/Pages**. Existing offline POS SQLite data is unchanged.
+- **Email/OTP prerequisite:** in BrewPOS Supabase Auth, allow new email signups and configure working SMTP, a numeric OTP email template including `{{ .Token }}`, and appropriate Auth email rate limits. Until this is configured, signup requests cannot be delivered or completed. Customer verification and real-device tests are still required.
+- **Deployment order:** apply additive `supabase/drafts/brewpos_signup_email_otp.sql`, deploy the matching `brewpos-sync` and `brewpos-owner` functions, publish GitHub Pages `signup.html`, `signup.js`, and updated owner assets. Then test invalid OTP, duplicate request, unverified JWT, other-business license ID, inactive device, and offline checkout.
+
 ## Architecture
 - **App:** BrewPOS Android; SQLite is the offline source of truth. Receipt printing is independent of cloud availability.
 - **Hosted marketing / owner interface:** GitHub Pages `https://markyyy-lolz.github.io/BrewPOS-Android/`.
