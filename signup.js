@@ -30,6 +30,7 @@ function setStage(next) {
   el("submit").disabled=next==="complete";
   for(const id of ["business","email","device"])el(id).readOnly=next!=="send";
   el("otp").required=next==="verify";
+  el("resend").hidden=next!=="verify";
 }
 el("signupForm").addEventListener("submit",async e=>{
   e.preventDefault();if(busy||stage==="complete")return;
@@ -47,7 +48,7 @@ el("signupForm").addEventListener("submit",async e=>{
     }else{
       if(stage==="verify"){
         const token=el("otp").value.trim();
-        if(!/^[0-9]{6,8}$/.test(token))throw Error("Enter the 6–8 digit email OTP.");
+        if(!/^[0-9]{6}$/.test(token))throw Error("Enter the 6-digit email OTP.");
         const verified=await post("/auth/v1/verify",{email:details.email,token,type:"email"});
         if(!verified.access_token)throw Error("Email verification did not return an authenticated session.");
         access=verified.access_token;
@@ -65,5 +66,14 @@ el("signupForm").addEventListener("submit",async e=>{
     }
   }catch(err){ feedback(err?.message||"Registration failed",true); }
   finally{busy=false;if(stage!=="complete")btn.disabled=false;}
+});
+el("resend").addEventListener("click",async()=>{
+  if(busy||stage!=="verify"||!details)return;
+  busy=true;el("resend").disabled=true;feedback("");
+  try {
+    await post("/auth/v1/otp",{email:details.email,create_user:true});
+    feedback("New six-digit code requested. Check inbox and spam. Supabase may limit resend frequency.");
+  }catch(err){feedback(err?.message||"Unable to resend OTP.",true)}
+  finally{busy=false;el("resend").disabled=false;}
 });
 setStage("send");
