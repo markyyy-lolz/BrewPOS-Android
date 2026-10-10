@@ -55,3 +55,20 @@ test("owner dashboard lists real signup requests and allows manual license match
   assert.ok(js.includes('owner("signup_requests")'));
   assert.ok(js.includes('owner("provision_customer"'));
 });
+
+test("public GitHub Pages registration verifies email OTP before submitting approval",()=>{
+  const page=root("website/public/signup.html");
+  const js=root("website/public/signup.js");
+  const index=root("website/public/index.html");
+  assert.ok(page.includes('id="business"'));
+  assert.ok(page.includes('id="device"'));
+  assert.ok(page.includes('id="otp"'));
+  assert.ok(page.includes('connect-src https://rfxzbuocxersgbshczbj.supabase.co'));
+  assert.ok(js.includes('create_user:true'));
+  assert.ok(js.includes('/auth/v1/verify'));
+  assert.ok(js.includes('action:"request_account"'));
+  assert.ok(js.includes('setStage("retry")'));
+  assert.ok(index.includes('href="signup.html"'));
+  for(const forbidden of ["service_role","PRIVATE_KEY_PKCS8","localStorage","sessionStorage"])
+    assert.equal(js.includes(forbidden),false);
+});
