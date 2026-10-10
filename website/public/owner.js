@@ -59,7 +59,9 @@ function clearSession() {
 function switchTab(tab) {
   const title={
     overview:["Overview","Your workspace","Live data from your dedicated BrewPOS Supabase project."],
-    activation:["Activation generator","Generate a license","Signed activation codes bound to one Android Device ID."],
+    approvals:["Client approvals","Review pending clients","Approve verified businesses to enable Cloud POS account login."],
+    accounts:["Cloud accounts","Manage client access","View and suspend approved business accounts."],
+    activation:["Offline licenses","Generate a license","Signed activation codes bound to one Android Device ID."],
     licenses:["Issued licenses","Issuance history","Audit log of generated activations (no plaintext codes stored)."],
     devices:["Devices","Registered tablets","Cloud device registrations and their last reported activity."],
     sales:["Cloud sales","Synchronized transactions","Read-only sales received by BrewPOS Cloud."]
@@ -90,6 +92,81 @@ function setCells(bodyId,rows,keys,empty) {
     target.append(tr);
   }
 }
+
+function td(value){
+  const cell=document.createElement("td");
+  cell.textContent=String(value??"—");
+  return cell;
+}
+function actionButton(text,handler,variant="outline"){
+  const button=document.createElement("button");
+  button.type="button";button.className=variant;button.textContent=text;
+  button.addEventListener("click",async()=>{
+    if(button.disabled)return;
+    button.disabled=true;
+    try{const changed=await handler();if(changed!==false)await loadTab();}
+    catch(e){status(e.message||"Owner request failed","error");}
+    finally{button.disabled=false;}
+  });
+  return button;
+}
+async function loadApprovals(){
+  const {requests=[]}=await owner("signup_requests");
+  const list=requests.filter(r=>r.status==="pending");
+  el("pendingCount").textContent=String(list.length);
+  const body=el("approvalRows");body.replaceChildren();
+  for(const req of list){
+    const row=document.createElement("tr");
+    row.append(td(req.business_name),td(req.email),td(req.android_device_id),td(date(req.requested_at)));
+    const plan=document.createElement("select");
+    plan.setAttribute("aria-label","Cloud plan for "+req.business_name);
+    for(const value of ["TRIAL","MONTHLY","LIFETIME"]){
+      const option=document.createElement("option");
+      option.value=value;option.textContent=value==="TRIAL"?"7-day trial":value==="MONTHLY"?"Monthly (30 days)":"Lifetime";
+      plan.append(option);
+    }
+    const planCell=document.createElement("td");planCell.append(plan);
+    const actions=document.createElement("td");actions.className="review-actions";
+    actions.append(
+      actionButton("✓ Approve",async()=>{
+        if(!confirm("Approve "+req.email+" for "+plan.options[plan.selectedIndex].text+"? This grants cloud organization access."))return false;
+        const result=await owner("approve_cloud_signup",{user_id:req.user_id,plan:plan.value});
+        status("Approved "+result.email+" for Cloud POS. Client can now sign in.","success");
+        return true;
+      },"primary"),
+      actionButton("Reject",async()=>{
+        if(!confirm("Reject request from "+req.email+"?"))return false;
+        await owner("reject_cloud_signup",{user_id:req.user_id});
+        status("Client registration rejected.","success");
+        return true;
+      })
+    );
+    row.append(planCell,actions);body.append(row);
+  }
+  if(!list.length)setCells("approvalRows",[],[()=>"",()=>"",()=>"",()=>"",()=>"",()=>""],"No pending clients. New verified registration requests will appear here.");
+}
+async function loadAccounts(){
+  const {accounts=[]}=await owner("accounts");
+  const body=el("accountRows");body.replaceChildren();
+  for(const acc of accounts){
+    const row=document.createElement("tr");
+    row.append(td(acc.email),td(acc.plan),td(acc.expires_at?date(acc.expires_at):"Lifetime"),
+      td(acc.status),td(acc.license_issue_id?"Cloud + Offline":"Cloud login"));
+    const cell=document.createElement("td");
+    if(acc.status==="active"||acc.status==="suspended"){
+      cell.append(actionButton(acc.status==="active"?"Suspend":"Reactivate",async()=>{
+        const next=acc.status==="active"?"suspended":"active";
+        if(!confirm("Set account "+acc.email+" to "+next+"?"))return false;
+        await owner("set_cloud_account_status",{account_id:acc.id,status:next});
+        status("Account "+next+".","success");
+        return true;
+      }));
+    }
+    row.append(cell);body.append(row);
+  }
+  if(!accounts.length)setCells("accountRows",[],[()=>"",()=>"",()=>"",()=>"",()=>""],"No approved client accounts yet.");
+}
+
 async function loadTab() {
   if(busy)return;
   busy=true;
@@ -104,6 +181,10 @@ async function loadTab() {
       el("activeDeviceCount").textContent=String(d.active_devices??0)+" active devices";
       el("licenseCount").textContent=String(d.issued_licenses??0);
       el("orgCount").textContent=String(d.organization_count??0);
+    } else if(currentTab==="approvals"){
+      await loadApprovals();
+    } else if(currentTab==="accounts"){
+      await loadAccounts();
     } else if(currentTab==="licenses") {
       const data=await owner("licenses");
       setCells("licensesRows",data.licenses||[],[
@@ -151,6 +232,8 @@ el("loginForm").addEventListener("submit",async event=>{
 });
 for(const b of document.querySelectorAll("[data-tab]"))b.addEventListener("click",()=>switchTab(b.dataset.tab));
 el("goActivation").addEventListener("click",()=>switchTab("activation"));
+el("goApprovals").addEventListener("click",()=>switchTab("approvals"));
+el("goAccounts").addEventListener("click",()=>switchTab("accounts"));
 el("refresh").addEventListener("click",()=>loadTab().catch(e=>status(e.message,"error")));
 el("signOut").addEventListener("click",()=>{clearSession();loginError("Signed out.");});
 el("issueForm").addEventListener("submit",async event=>{
