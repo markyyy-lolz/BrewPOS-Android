@@ -10,7 +10,8 @@ test("Azurate Owner can request and verify email OTP without creating a customer
   assert.ok(html.includes('name="code"'));
   assert.ok(html.includes('autocomplete="one-time-code"'));
   assert.ok(js.includes('"/auth/v1/otp"'));
-  assert.ok(js.includes("create_user:false"));
+  assert.ok(js.includes("create_user:true"));
+  assert.ok(js.includes("OTP rate limit reached"));
   assert.ok(js.includes('"/auth/v1/verify"'));
   assert.ok(js.includes('type:"email"'));
   assert.ok(js.includes('await owner("overview")'));
@@ -27,9 +28,11 @@ test("Owner backend verifies JWT and grants access exclusively by UUID",()=>{
   assert.ok(auth.includes("/auth/v1/user"));
   assert.ok(auth.includes("user?.email_confirmed_at"));
   assert.ok(auth.includes("uuid(user?.id)"));
-  assert.ok(auth.includes('brew_owner_accounts?select=user_id&user_id=eq.'));
-  assert.ok(auth.includes('is_active=eq.true'));
-  assert.ok(auth.includes("matches[0].user_id === user.id"));
+  assert.ok(auth.includes('brew_owner_accounts?select=user_id,is_active&user_id=eq.'));
+  assert.ok(auth.includes("rpc/brew_redeem_owner_invitation"));
+  assert.ok(auth.includes("verified_user_id:user.id,verified_email:email"));
+  assert.ok(auth.includes('matches[0].is_active === true'));
+  assert.ok(auth.includes("accepted === true ? user.id : null"));
   assert.equal(auth.includes("user_metadata"),false);
   assert.equal(auth.includes("email==="),false);
   assert.ok(api.includes('await checkedOwner(req)'));
@@ -44,4 +47,17 @@ test("Owner registry is private and cannot be self-promoted from browser/client"
   assert.ok(sql.includes("grant select on public.brew_owner_accounts to service_role"));
   assert.ok(sql.includes("using (false)"));
   assert.equal(sql.includes("insert into public.brew_owner_accounts"),false);
+});
+
+test("First-time owner enrollment requires a private nonexpired email invite and confirmed user",()=>{
+  const sql=repo("supabase/drafts/brewpos_owner_verified_invites.sql");
+  assert.match(sql,/brew_owner_invitations/);
+  assert.match(sql,/auth\.users/);
+  assert.match(sql,/email_confirmed_at is not null/);
+  assert.match(sql,/claimed_by is null/);
+  assert.match(sql,/expires_at > now\(\)/);
+  assert.match(sql,/brew_owner_accounts/);
+  assert.match(sql,/grant execute.*brew_redeem_owner_invitation/s);
+  assert.match(sql,/to service_role/);
+  assert.doesNotMatch(sql,/grant execute.*authenticated/);
 });
