@@ -36,6 +36,17 @@ app.MapPut("/v1/catalog",async(HttpContext ctx,HubDb db,JsonElement body)=>{
         return Results.BadRequest(new{error=ex.Message});
     }
 });
+app.MapPost("/v1/catalog/refresh",async(HttpContext ctx,HubDb db,HubSettings hub,StaffRefreshRequest request)=>{
+    if(!Has(ctx,"admin"))return Results.Forbid();
+    try{
+        var products=await BrewCatalog.Load(hub,request.StaffAccessToken,db.Menu());
+        db.ReplaceMenu(products);
+        return Results.Ok(new{saved=products.Count,from="BrewPOS Supabase verified staff membership"});
+    }catch(UnauthorizedAccessException ex){return Results.Json(new{error=ex.Message},statusCode:403);}
+    catch(Exception ex)when(ex is HttpRequestException or JsonException or InvalidOperationException){
+        return Results.BadRequest(new{error=ex.Message});
+    }
+});
 app.MapPost("/v1/orders",async(HttpContext ctx,HubDb db,KioskOrder request)=>{
     if(!Has(ctx,"kiosk","cashier","admin"))return Results.Forbid();
     try {var result=db.Place(request);return Results.Ok(result);}
@@ -94,6 +105,7 @@ sealed record KioskLine(Guid ProductId,string Name,int Quantity,long UnitCentavo
 sealed record KioskOrder(Guid Id,string Number,Guid InstallationId,string Service,string? Notes,string PaymentMethod,
     List<KioskLine> Lines,long TotalCentavos,string? CreatedAt=null,string Status="AwaitingPayment");
 sealed record StatusRequest(string Next);
+sealed record StaffRefreshRequest(string StaffAccessToken);
 sealed class ConflictException(string message):Exception(message);
 
 sealed class HubDb {
