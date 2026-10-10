@@ -2,7 +2,7 @@ name: Android Debug APK
 
 on:
   push:
-    branches: [main, feature/android-kiosk-qrph-multiprinter]
+    branches: [main, feature/android-kiosk-qrph-multiprinter, feature/android-premium-ui-refresh]
   pull_request:
     branches: [main]
   workflow_dispatch:
