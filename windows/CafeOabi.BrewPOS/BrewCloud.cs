@@ -66,9 +66,12 @@ public sealed class BrewCloud {
         foreach(var membership in result.GetProperty("memberships").EnumerateArray()) {
             var org=membership.GetProperty("organization_id").GetGuid();
             var role=membership.GetProperty("role").GetString()??"viewer";
+            var organizationName=membership.TryGetProperty("organization_name",out var orgName)?orgName.GetString()??"":"";
+            var isOabi=System.Globalization.CultureInfo.InvariantCulture.CompareInfo.Compare(
+                organizationName,"Cafe Oabi",System.Globalization.CompareOptions.IgnoreCase|System.Globalization.CompareOptions.IgnoreNonSpace)==0;
             foreach(var branch in membership.GetProperty("branches").EnumerateArray()) {
                 var name=branch.GetProperty("name").GetString()??"";
-                if(name.Contains("Oabi",StringComparison.OrdinalIgnoreCase))
+                if(isOabi)
                     candidates.Add(new Tenant(org,branch.GetProperty("id").GetGuid(),name,role));
             }
         }

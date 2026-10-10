@@ -11,6 +11,7 @@ function harness({role='owner',verified=true,registeredBranch=branch,member=true
   calls.push([url,init]);let result;
   if(url.endsWith('/auth/v1/user'))result={id:user,email:'test@example.com',email_confirmed_at:verified?'2026-01-01':null};
   else if(url.includes('brew_memberships?'))result=member?[{organization_id:org,role}]:[];
+  else if(url.includes('brew_organizations?'))result=[{name:'Café Oabi'}];
   else if(url.includes('brew_branches?'))result=[{id:branch}];
   else if(url.includes('brew_devices?'))result=[{id:device,is_active:true,branch_id:registeredBranch}];
   else if(url.includes('brew_signup_requests?'))result=[];
@@ -48,4 +49,9 @@ test('catalog requires membership and registered device',async()=>{
 test('existing verified signup request route is preserved',async()=>{
  const h=harness({member:false});const r=await h.call({action:'request_account',business_name:'Café Test',android_device_id:'0123456789abcdef'});
  assert.equal(r.status,200);assert.equal((await r.json()).requested,true);
+});
+
+test('whoami identifies the cafe organization even when the branch is Main Branch',async()=>{
+ const h=harness();const r=await h.call({action:'whoami'});
+ assert.equal((await r.json()).memberships[0].organization_name,'Café Oabi');
 });

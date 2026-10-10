@@ -67,4 +67,22 @@ class InventorySyncTest {
         assertThrows(IllegalArgumentException::class.java) {db.bind(org,branch,"owner")}
         assertEquals(1,db.pendingSyncCount())
     }
+    @Test fun upgradePreservesExistingV2ProductsAndPendingSales() {
+        db.close()
+        val old=context.openOrCreateDatabase("brewpos_local.db",Context.MODE_PRIVATE,null)
+        old.execSQL("CREATE TABLE products (id INTEGER PRIMARY KEY,name TEXT NOT NULL,category TEXT NOT NULL,price_cents INTEGER NOT NULL,stock INTEGER NOT NULL,track_stock INTEGER NOT NULL,active INTEGER NOT NULL,icon TEXT NOT NULL)")
+        old.execSQL("INSERT INTO products VALUES(1,'Existing Latte','Coffee',12000,7,1,1,'cup')")
+        old.execSQL("CREATE TABLE sales (id INTEGER PRIMARY KEY)")
+        old.execSQL("INSERT INTO sales VALUES(1)")
+        old.execSQL("CREATE TABLE sync_outbox (event_id TEXT PRIMARY KEY,sale_id INTEGER,installation_id TEXT,payload TEXT,state TEXT,created_at INTEGER)")
+        old.execSQL("INSERT INTO sync_outbox VALUES('legacy',1,'old','{}','pending',0)")
+        old.version=2
+        old.close()
+        db=StoreDb(context)
+        assertEquals(7,db.products().single().stock)
+        assertNull(db.products().single().cloudId)
+        assertEquals(1,db.pendingSyncCount())
+        assertEquals("legacy",db.pendingSyncBatch().single().first)
+        assertThrows(IllegalArgumentException::class.java) {db.bind(org,branch,"owner")}
+    }
 }

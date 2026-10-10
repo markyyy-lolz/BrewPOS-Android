@@ -40,3 +40,5 @@ The inventory functions were applied through migration `brewpos_inventory_protoc
 Supabase security advisor reported no database security findings for the new functions; the existing Auth setting has [leaked-password protection disabled](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). No Auth settings were changed.
 
 The only existing organization/branch is Azurate Software Solutions / Internal Test Café. Café Oabi has not been provisioned. The published website already has plans, email-OTP owner login and customer onboarding screens. Listed Basic/Premium prices are explicitly indicative, not approved offers; no pricing was changed in this update.
+
+Café Oabi Windows now resolves the authorized organization name (accent/case insensitive exact match). The existing owner onboarding creates a branch named Main Branch; the previous branch-name substring check could never find that new customer. No branch is selected across organizations, and multiple authorized Oabi branches still require explicit selection work.

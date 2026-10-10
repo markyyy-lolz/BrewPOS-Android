@@ -83,7 +83,8 @@ Deno.serve(async(req)=>{
       const authorized=[];
       for(const m of membership){
         const branch=await rows(`brew_branches?select=id,name,organization_id&organization_id=eq.${m.organization_id}&is_active=eq.true`);
-        authorized.push({organization_id:m.organization_id,role:m.role,branches:branch});
+        const org=await rows(`brew_organizations?select=name&id=eq.${m.organization_id}`);
+        authorized.push({organization_id:m.organization_id,organization_name:org[0]?.name||"",role:m.role,branches:branch});
       }
       const requests=await rows("brew_signup_requests?select=status,business_name,requested_at&user_id=eq."+userId);
       return answer(200,{memberships:authorized,
