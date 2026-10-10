@@ -61,6 +61,41 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Publish Android cashier + kiosk DEVELOPMENT pre-release
+        if: success() && github.ref == 'refs/heads/feature/android-kiosk-qrph-multiprinter' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v2.0.0-android-self-order-preview.1
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/BrewPOS-Android-Cashier-DEV.apk
+          cp kiosk/build/outputs/apk/debug/kiosk-debug.apk dist/BrewPOS-Android-SelfOrdering-Kiosk-DEV.apk
+          cat > /tmp/brewpos-kiosk-release.md <<'NOTES'
+          ## BrewPOS Android Cashier + Self-Ordering Kiosk — DEVELOPMENT PREVIEW
+          
+          **Android only:** two independent debug APKs, cashier and touchscreen self-order kiosk.
+          
+          Features in source: menu and drink customization, dine-in/takeout, Pay at Cashier or QR Ph selection, order-number flow, kiosk-order cashier UI, and separate Bluetooth printer routing for customer, barista and kitchen tickets.
+          
+          **Not a production launch.** The kiosk Supabase SQL migration and dedicated `brewpos-kiosk` Edge Function are deliberately NOT deployed. Kiosk pairing, synchronized unpaid orders, cashier settlement and QR Ph cannot be used on the live café backend until the reviewed migration and authenticated endpoint have been deployed and tested.
+          
+          QR Ph is **test-mode only and disabled by default** without test-merchant credentials. It must never be treated as a confirmed payment based on a displayed QR. No live QR Ph payment, merchant onboarding, webhook/expiry acceptance, or physical printer testing is claimed. Android kiosk orders require network connectivity; offline LAN hub is not implemented.
+          
+          The cashier retains its existing SQLite offline checkout, BP1 device activation and hybrid sync mechanics; no database was reset. APKs are **debug-signed** for technical evaluation and require device/branch onboarding where applicable. Do not install over a deployed production app without verified local backups. Avoid clearing Android app data.
+          
+          Source: feature/android-kiosk-qrph-multiprinter; draft PR #12. Full setup and blockers: docs/ANDROID_SELF_ORDER_KIOSK.md.
+          NOTES
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Development pre-release already exists; refresh attached build files."
+          else
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --prerelease \
+              --title "BrewPOS Android Cashier + Self-Order Kiosk — Development Preview 1" \
+              --notes-file /tmp/brewpos-kiosk-release.md
+          fi
+          gh release upload "$RELEASE_TAG" dist/BrewPOS-Android-Cashier-DEV.apk \
+            dist/BrewPOS-Android-SelfOrdering-Kiosk-DEV.apk --clobber
+
       - name: Publish activation preview prerelease (DEBUG APK only)
         if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
