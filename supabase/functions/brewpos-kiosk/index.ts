@@ -139,10 +139,21 @@ Deno.serve(async(req)=>{
         "&branch_id=eq."+data.branch_id+"&installation_id=eq."+data.installation_id+"&is_active=eq.true");
       if(known.length!==1)return reply(403,{error:"Cashier device is not registered"});
       if(data.action==="cashier_orders"){
-        const rows=await api("brew_kiosk_orders?select=id,order_number,items,total_centavos,service_type,payment_choice,payment_status,created_at"+
+        const rows=await api("brew_kiosk_orders?select=id,order_number,items,total_centavos,service_type,payment_choice,payment_status,created_at,provider_intent_id,organization_id,tendered_centavos,change_centavos"+
           "&organization_id=eq."+data.organization_id+"&branch_id=eq."+data.branch_id+
           "&order=created_at.desc&limit=80");
-        return reply(200,{orders:rows});
+        // Reconcile unattended QR Ph orders when staff reconnects, even if the
+        // customer has left the kiosk. The provider status is read server-side.
+        for(const row of rows.filter((x:any)=>x.payment_choice==="qrph" &&
+              x.payment_status==="awaiting_qrph" && x.provider_intent_id).slice(0,5)) {
+          try { await verifyAndSettle(row); } catch(_e) { /* Stay unpaid until verified/retried. */ }
+        }
+        // Do not send provider identifiers unnecessarily to the cashier client.
+        return reply(200,{orders:rows.map((x:any)=>({
+          id:x.id,order_number:x.order_number,items:x.items,total_centavos:x.total_centavos,
+          service_type:x.service_type,payment_choice:x.payment_choice,payment_status:x.payment_status,
+          created_at:x.created_at,tendered_centavos:x.tendered_centavos,change_centavos:x.change_centavos
+        }))});
       }
       if(!uuid(data.order_id)||!Number.isSafeInteger(data.tendered_centavos) || data.tendered_centavos<0)
         return reply(400,{error:"Invalid cash payment"});
