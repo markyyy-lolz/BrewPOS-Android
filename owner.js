@@ -124,7 +124,17 @@ async function loadTab() {
         x=>date(x.expires_at),x=>date(x.issued_at)
       ],"No activation codes have been issued yet.");
     } else if(currentTab==="accounts") {
-      const [licenses,customers]=await Promise.all([owner("licenses"),owner("accounts")]);
+      const [licenses,customers,signups]=await Promise.all([
+        owner("licenses"), owner("accounts"), owner("signup_requests")
+      ]);
+      const registrationList=signups.requests||[];
+      setCells("signupRows",registrationList,[
+        x=>x.email,x=>x.business_name,x=>x.android_device_id,
+        x=>x.status,x=>date(x.requested_at)
+      ],"No OTP-verified registration requests yet.");
+      fillOptions("signupSelection",registrationList.filter(x=>x.status==="pending"),
+        x=>x.email,x=>x.business_name+" — "+x.email+" — "+x.android_device_id,
+        "Select an email-verified registration");
       const issues=licenses.licenses||[], accounts=customers.accounts||[];
       setCells("accountRows",accounts,[
         x=>x.email,x=>x.plan,x=>date(x.expires_at),x=>x.status,x=>date(x.created_at)
@@ -203,6 +213,11 @@ el("copyCode").addEventListener("click",async()=>{
  if(!code)return;
  try{await navigator.clipboard.writeText(code);status("Activation code copied. Share it securely.","success");}
  catch {el("generatedCode").select();status("Select and manually copy the highlighted activation code.","info");}
+});
+el("signupSelection").addEventListener("change",()=>{
+  const email=el("signupSelection").value;
+  el("accountEmail").value=email;
+  if(email)status("Signup selected. Issue a matching BP1 token for this customer's business and device before approving.","info");
 });
 el("accountCreateForm").addEventListener("submit",async event=>{
   event.preventDefault();status("");
