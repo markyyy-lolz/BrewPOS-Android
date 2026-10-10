@@ -77,11 +77,13 @@ class KioskActivity : Activity() {
         c.init(Cipher.DECRYPT_MODE,secretKey(),GCMParameterSpec(128,raw.copyOfRange(0,12)))
         return String(c.doFinal(raw.copyOfRange(12,raw.size)),StandardCharsets.UTF_8)
     }
-    private fun loadConfig():Config?=try{
-        val value=pref.getString("paired",null)?:return null
-        val o=JSONObject(unseal(value))
-        Config(o.getString("url"),o.getString("role"),o.getString("key"),o.getString("branch"))
-    }catch(_:Exception){null}
+    private fun loadConfig():Config? {
+        return try {
+            val value=pref.getString("paired",null) ?: return null
+            val o=JSONObject(unseal(value))
+            Config(o.getString("url"),o.getString("role"),o.getString("key"),o.getString("branch"))
+        }catch(_:Exception){null}
+    }
     private fun showPairing(){
         val root=LinearLayout(this).apply{
             orientation=LinearLayout.VERTICAL;setPadding(38,54,38,35);setBackgroundColor(Color.rgb(247,249,245))
