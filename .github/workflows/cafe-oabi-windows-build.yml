@@ -1,0 +1,51 @@
+name: Cafe Oabi BrewPOS Windows CI
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/cafe-oabi-windows-hybrid-v1]
+    paths: ["windows/**", ".github/workflows/cafe-oabi-windows-build.yml"]
+  pull_request:
+    paths: ["windows/**", ".github/workflows/cafe-oabi-windows-build.yml"]
+concurrency:
+  group: cafe-oabi-windows-build
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build cafe WPF
+        shell: pwsh
+        run: dotnet build windows/CafeOabi.BrewPOS/CafeOabi.BrewPOS.csproj -c Release -warnaserror
+      - name: Test offline sale durability and security
+        shell: pwsh
+        run: dotnet test windows/CafeOabi.Tests/CafeOabi.Tests.csproj -c Release --verbosity normal
+      - name: Publish self-contained EXE
+        shell: pwsh
+        run: |
+          dotnet publish windows/CafeOabi.BrewPOS/CafeOabi.BrewPOS.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o windows/publish
+      - name: Build Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "windows/installer/CafeOabi.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Installer failed" }
+          if (!(Test-Path windows/artifacts/Cafe-Oabi-BrewPOS-Windows-v1.0.0-Setup.exe)) { throw "Installer missing" }
+      - name: Upload development installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cafe-Oabi-BrewPOS-Windows-v1.0.0-Installer
+          path: windows/artifacts/Cafe-Oabi-BrewPOS-Windows-v1.0.0-Setup.exe
+          if-no-files-found: error
+      - name: Upload portable Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cafe-Oabi-BrewPOS-Windows-v1.0.0-Portable
+          path: windows/publish/
+          if-no-files-found: error
