@@ -102,7 +102,104 @@ async function issueLicense(input: Record<string, unknown>, userId: string) {
     expires_at:payload.expires_at, notice:"Save this code securely; it is shown once only."
   };
 }
+// Account creation is an Azurate-owner-only operation. A customer gets a role ONLY
+// after being invited to Auth and associated with a real, server-recorded BP1 issue.
+const validEmail = (s: string) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(s) && s.length <= 254;
+async function insertOne(table: string, data: Record<string,unknown>) {
+  const r=await api(table+"?select=*", {
+    method:"POST", headers:{"prefer":"return=representation"}, body:JSON.stringify(data)
+  });
+  if(!r.ok)throw Error("Could not save "+table+"; no access was granted");
+  const list=await r.json();
+  if(!Array.isArray(list)||list.length!==1)throw Error("Unexpected response while creating "+table);
+  return list[0] as Record<string,unknown>;
+}
+async function getIssue(value: unknown) {
+  if(!uuid(value))throw Error("Choose a valid signed license issuance");
+  const issues=await rows("brew_activation_issues?select=id,customer_name,android_device_id,plan,expires_at&id=eq."+value);
+  if(issues.length!==1)throw Error("This activation has not been issued by Azurate");
+  const issue=issues[0];
+  if(issue.expires_at && new Date(String(issue.expires_at)).getTime()<=Date.now())
+    throw Error("Expired licenses cannot be assigned to an account");
+  return issue;
+}
+async function provisionCustomer(input: Record<string,unknown>, userId: string) {
+  const email=String(input.email||"").trim().toLowerCase();
+  if(!validEmail(email))throw Error("Enter a valid customer email address");
+  const issue=await getIssue(input.license_issue_id);
+  if((await rows("brew_customer_accounts?select=id&license_issue_id=eq."+issue.id)).length)
+    throw Error("This activation is already assigned to an account");
+  if((await rows("brew_customer_accounts?select=id&email=eq."+encodeURIComponent(email))).length)
+    throw Error("Email already has a BrewPOS customer account; use Change License");
+  // Dedicated merchant tenant, NEVER use the shared demo organization.
+  // Stable slug lets an administrator safely find partial onboarding work.
+  const slug="brew-license-"+String(issue.id);
+  let organizations=await rows("brew_organizations?select=id,name&slug=eq."+slug);
+  if(!organizations.length)organizations=[await insertOne("brew_organizations",{
+    name:String(issue.customer_name),slug
+  })];
+  const orgId=String(organizations[0].id);
+  let branches=await rows("brew_branches?select=id&organization_id=eq."+orgId+"&name=eq.Main%20Branch");
+  if(!branches.length)branches=[await insertOne("brew_branches",{
+    organization_id:orgId,name:"Main Branch",timezone:"Asia/Manila"
+  })];
+  const branchId=String(branches[0].id);
+  // Invitation link is configured for GitHub Pages account password setup.
+  // Supabase Auth redirect allow-list and SMTP must be configured by owner.
+  const redirect="https://markyyy-lolz.github.io/BrewPOS-Android/account-setup.html";
+  const invite=await fetch(base+"/auth/v1/invite?redirect_to="+encodeURIComponent(redirect),{
+    method:"POST",
+    headers:{"apikey":serviceKey,"authorization":"Bearer "+serviceKey,"content-type":"application/json"},
+    body:JSON.stringify({email})
+  });
+  if(!invite.ok)throw Error("Supabase Auth could not invite this email. Check Auth SMTP and invite settings; no branch access was granted.");
+  const invited=await invite.json();
+  if(!uuid(invited?.id))throw Error("Auth invite did not provide a valid user ID");
+  const invitedUser=String(invited.id);
+  // If a retry happens after partial onboarding, avoid duplicate memberships.
+  const existing=await rows("brew_memberships?select=id&user_id=eq."+invitedUser+"&organization_id=eq."+orgId);
+  if(!existing.length)await insertOne("brew_memberships",{
+    user_id:invitedUser,organization_id:orgId,role:"owner",is_active:true
+  });
+  const account=await insertOne("brew_customer_accounts",{
+    email,user_id:invitedUser,organization_id:orgId,branch_id:branchId,
+    license_issue_id:issue.id,plan:issue.plan,expires_at:issue.expires_at,
+    status:"invited",created_by:userId
+  });
+  return {created:true,id:account.id,email,plan:issue.plan,
+    organization_id:orgId,branch_id:branchId,
+    notice:"Invitation requested. Client must verify email, set password, then sign in and register their tablet."};
+}
+async function changeCustomerLicense(input: Record<string,unknown>) {
+  if(!uuid(input.account_id))throw Error("Choose a customer account");
+  const issue=await getIssue(input.license_issue_id);
+  const current=await rows("brew_customer_accounts?select=id,email,organization_id,license_issue_id&id=eq."+input.account_id);
+  if(current.length!==1)throw Error("Customer account not found");
+  if((await rows("brew_customer_accounts?select=id&license_issue_id=eq."+issue.id)).some(x=>x.id!==input.account_id))
+    throw Error("License already belongs to another account");
+  const row=current[0];
+  // Require same customer identity. Issuing a new activation for a DIFFERENT
+  // customer must never silently transfer account or expose tenant data.
+  const orgs=await rows("brew_organizations?select=name&id=eq."+row.organization_id);
+  if(orgs.length!==1||String(orgs[0].name).trim().toLowerCase()!==String(issue.customer_name).trim().toLowerCase())
+    throw Error("License customer name does not match this account's business");
+  const r=await api("brew_customer_accounts?id=eq."+input.account_id,{
+    method:"PATCH",headers:{"prefer":"return=representation"},
+    body:JSON.stringify({license_issue_id:issue.id,plan:issue.plan,expires_at:issue.expires_at,updated_at:new Date().toISOString()})
+  });
+  if(!r.ok)throw Error("Account plan could not be updated");
+  const updated=await r.json();
+  if(!Array.isArray(updated)||updated.length!==1)throw Error("Account update was not confirmed");
+  return {updated:true,email:row.email,plan:issue.plan,expires_at:issue.expires_at,
+    notice:"Cloud account plan updated. The tablet also needs the newly signed BP1 activation code."};
+}
+
 async function route(action: string, input: Record<string,unknown>, userId: string) {
+  if (action === "accounts") {
+    return {accounts:await rows("brew_customer_accounts?select=id,email,organization_id,branch_id,license_issue_id,plan,expires_at,status,created_at&order=created_at.desc&limit=100")};
+  }
+  if (action === "provision_customer") return await provisionCustomer(input,userId);
+  if (action === "change_customer_license") return await changeCustomerLicense(input);
   if (action === "overview") {
     const [sales,orgs,devices,licenses] = await Promise.all([
       rows("brew_sales?select=id,total_centavos,received_at&order=received_at.desc&limit=100"),
