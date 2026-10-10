@@ -212,6 +212,10 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     val snackbar = remember { SnackbarHostState() }
     fun refresh() { allProducts = db.products(includeArchived = true); allSales = db.sales() }
     fun alert(message: String) { scope.launch { snackbar.showSnackbar(message) } }
+    LaunchedEffect(tab) {
+        // Show catalog/stock updates after cloud setup and during an open cashier session.
+        while(true) { refresh();delay(5_000) }
+    }
     val savePdf = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) {
             runCatching { context.contentResolver.openOutputStream(uri)?.use { it.write(requireNotNull(pendingPdf)) } ?: error("Cannot write file") }
@@ -722,6 +726,7 @@ private fun ProductEditor(product: Product?, onClose: () -> Unit, onSave: (Produ
             Button(onClick = {
                 onSave(Product(id = product?.id ?: 0L, name = name.trim(), category = category,
                     priceCents = priceCents ?: 0, stock = stockCount ?: 0,
+                    cloudId = product?.cloudId, cloudVersion = product?.cloudVersion ?: 0,
                     trackStock = trackStock, active = true, icon = icon.ifBlank { "☕" }.take(4)))
             }, enabled = name.isNotBlank() && priceCents != null && stockCount != null && stockCount >= 0) { Text("Save") }
         }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })

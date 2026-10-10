@@ -12,7 +12,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** SQLite source of truth. Completed checkout and stock deductions are one transaction. */
-class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos_local.db", null, 2) {
+class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos_local.db", null, 3) {
     private val terminalId: String by lazy {
         val prefs = context.getSharedPreferences("brewpos_terminal", Context.MODE_PRIVATE)
         prefs.getString("installation_uuid", null) ?: UUID.randomUUID().toString().also {
@@ -43,28 +43,16 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
         db.execSQL("CREATE INDEX sale_date_idx ON sales(created_at)")
         db.execSQL("CREATE INDEX sale_line_sale_idx ON sale_lines(sale_id)")
         createSyncOutbox(db)
-        listOf(
-            Product(name="Spanish Latte", category="Coffee", priceCents=16500, stock=50, icon="☕"),
-            Product(name="Iced Americano", category="Coffee", priceCents=12000, stock=50, icon="🧊"),
-            Product(name="Caramel Macchiato", category="Coffee", priceCents=17500, stock=40, icon="🍮"),
-            Product(name="Cafe Latte", category="Coffee", priceCents=15000, stock=50, icon="🥛"),
-            Product(name="Cappuccino", category="Coffee", priceCents=15500, stock=40, icon="☕"),
-            Product(name="Mocha", category="Coffee", priceCents=16500, stock=40, icon="🍫"),
-            Product(name="Matcha Latte", category="Non-Coffee", priceCents=17500, stock=30, icon="🍵"),
-            Product(name="Chocolate Frappe", category="Non-Coffee", priceCents=18500, stock=30, icon="🥤"),
-            Product(name="Strawberry Milk", category="Non-Coffee", priceCents=15500, stock=30, icon="🍓"),
-            Product(name="Peach Iced Tea", category="Tea", priceCents=11500, stock=30, icon="🍑"),
-            Product(name="Butter Croissant", category="Pastries", priceCents=11000, stock=20, icon="🥐"),
-            Product(name="Chocolate Cookie", category="Pastries", priceCents=8500, stock=25, icon="🍪")
-        ).forEach { insertProduct(db, it) }
+        createInventorySync(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         require(oldVersion <= newVersion) { "Unsupported schema downgrade" }
         if (oldVersion < 2) createSyncOutbox(db)
+        if (oldVersion < 3) createInventorySync(db)
     }
 
-    /** Additive local queue. Network upload and server acknowledgements are NOT active yet. */
+    /** Durable local sale queue. */
     private fun createSyncOutbox(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE IF NOT EXISTS sync_outbox (
             event_id TEXT PRIMARY KEY,
@@ -80,20 +68,79 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
         db.execSQL("CREATE INDEX IF NOT EXISTS sync_outbox_pending_idx ON sync_outbox(state,created_at)")
     }
 
+    private fun createInventorySync(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE products ADD COLUMN cloud_id TEXT")
+        db.execSQL("ALTER TABLE products ADD COLUMN cloud_version INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE UNIQUE INDEX products_cloud_id ON products(cloud_id)")
+        db.execSQL("CREATE TABLE cloud_binding (singleton INTEGER PRIMARY KEY CHECK(singleton=1), org_id TEXT NOT NULL, branch_id TEXT NOT NULL, role TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE stock_outbox (event_id TEXT PRIMARY KEY, payload TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL)")
+    }
+    fun binding(): Triple<String,String,String>? = readableDatabase.rawQuery(
+        "SELECT org_id,branch_id,role FROM cloud_binding WHERE singleton=1", null).use {
+        if(it.moveToFirst()) Triple(it.getString(0),it.getString(1),it.getString(2)) else null
+    }
+    fun bind(org: String, branch: String, role: String) {
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            val previous=binding()
+            require(previous==null || (previous.first==org && previous.second==branch)) {
+                "This installation belongs to another branch. Its receipts cannot be reassigned."
+            }
+            require(previous!=null || pendingSyncCount()==0) { "Unlinked historical sales need owner reconciliation before linking." }
+            db.insertWithOnConflict("cloud_binding",null,ContentValues().apply {
+                put("singleton",1);put("org_id",org);put("branch_id",branch);put("role",role)
+            },SQLiteDatabase.CONFLICT_REPLACE)
+            db.setTransactionSuccessful()
+        } finally {db.endTransaction()}
+    }
+    /** Apply only after all local events ACK; recheck inside the SQLite write transaction. */
+    fun replaceCatalog(org: String, branch: String, catalog: JSONArray) {
+        val bound=binding() ?: error("Register the tablet first")
+        require(bound.first==org && bound.second==branch)
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            require(pendingSyncCount()==0) { "Pending events must reconcile before downloading stock." }
+            db.execSQL("UPDATE products SET active=0")
+            val seen=mutableSetOf<String>()
+            for(i in 0 until catalog.length()) {
+                val p=catalog.getJSONObject(i)
+                require(p.getString("organization_id")==org && p.getString("branch_id")==branch)
+                val id=UUID.fromString(p.getString("id")).toString()
+                require(seen.add(id)) { "Duplicate catalog product" }
+                val stock=p.get("stock_quantity").toString().toBigDecimal().intValueExact()
+                val price=p.getLong("price_centavos")
+                require(price in 0..Int.MAX_VALUE.toLong())
+                val v=ContentValues().apply {
+                    put("cloud_id",id);put("cloud_version",p.getLong("version"))
+                    put("name",p.getString("name"));put("category",p.getString("category"))
+                    put("price_cents",price);put("stock",stock)
+                    put("track_stock",if(p.getBoolean("track_stock")) 1 else 0)
+                    put("active",if(p.getBoolean("active")) 1 else 0)
+                }
+                if(db.update("products",v,"cloud_id=?",arrayOf(id))==0) db.insertOrThrow("products",null,v)
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
     fun installationId(): String = terminalId
 
     fun pendingSyncCount(): Int {
-        readableDatabase.rawQuery("SELECT COUNT(*) FROM sync_outbox WHERE state='pending'", null).use { c ->
+        readableDatabase.rawQuery("SELECT (SELECT COUNT(*) FROM sync_outbox WHERE state='pending') + (SELECT COUNT(*) FROM stock_outbox WHERE state='pending')", null).use { c ->
             return if (c.moveToFirst()) c.getInt(0) else 0
         }
     }
 
-    /** Outbox stays pending until a future authenticated sync client gets a server ACK. */
+    /** Outbox stays pending until authenticated cloud sync returns a matching ACK. */
     fun pendingSyncBatch(limit: Int = 25): List<Pair<String,String>> {
         val batch = mutableListOf<Pair<String,String>>()
-        readableDatabase.query("sync_outbox", arrayOf("event_id","payload"),
-            "state=?", arrayOf("pending"), null, null, "created_at ASC", limit.coerceIn(1,100).toString()).use { c ->
-            while (c.moveToNext()) batch += c.getString(0) to c.getString(1)
+        readableDatabase.rawQuery("""SELECT event_id,payload FROM (
+            SELECT event_id,payload,created_at FROM sync_outbox WHERE state='pending'
+            UNION ALL SELECT event_id,payload,created_at FROM stock_outbox WHERE state='pending'
+        ) ORDER BY created_at,event_id LIMIT ?""", arrayOf(limit.coerceIn(1,100).toString())).use { c ->
+            while(c.moveToNext()) batch += c.getString(0) to c.getString(1)
         }
         return batch
     }
@@ -101,7 +148,8 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
     /** Call only after an authenticated backend has durably acknowledged the event. */
     fun acknowledgeSyncedEvent(eventId: String): Boolean {
         val v = ContentValues().apply { put("state", "synced"); putNull("last_error") }
-        return writableDatabase.update("sync_outbox", v, "event_id=? AND state='pending'", arrayOf(eventId)) == 1
+        if(writableDatabase.update("sync_outbox",v,"event_id=? AND state='pending'",arrayOf(eventId))==1)return true
+        return writableDatabase.update("stock_outbox",ContentValues().apply {put("state","synced")},"event_id=? AND state='pending'",arrayOf(eventId))==1
     }
 
     private fun insertProduct(db: SQLiteDatabase, product: Product): Long {
@@ -114,12 +162,36 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
         put("active", if (p.active) 1 else 0); put("icon", p.icon)
     }
     fun saveProduct(p: Product) {
-        require(p.name.isNotBlank() && p.priceCents >= 0 && p.stock >= 0)
+        require(p.name.isNotBlank() && p.priceCents >= 0)
+        val bound=binding()
+        if(bound!=null) {
+            require(bound.third in listOf("owner","manager")) { "Manager permission required" }
+            val db=writableDatabase
+            db.beginTransaction()
+            try {
+                val old=products(true).singleOrNull {it.id==p.id} ?: error("Create cloud menu products through the owner catalog first")
+                require(old.cloudId!=null && old.trackStock && old.copy(stock=p.stock)==p) { "Cloud menu details must be changed by the owner; only stock adjustments are available offline" }
+                val delta=p.stock.toLong()-old.stock.toLong()
+                require(delta!=0L && kotlin.math.abs(delta)<=100000) { "Enter a stock change of 1–100,000 units" }
+                val id=UUID.randomUUID().toString();val now=System.currentTimeMillis()
+                val payload=JSONObject().put("event_id",id).put("event_type","stock.adjusted").put("payload_version",2)
+                    .put("installation_id",terminalId).put("organization_id",bound.first).put("branch_id",bound.second)
+                    .put("product_id",old.cloudId).put("delta",delta).put("reason","Manual stock adjustment")
+                    .put("created_at_ms",now)
+                db.execSQL("UPDATE products SET stock=? WHERE id=?",arrayOf(p.stock,p.id))
+                db.execSQL("INSERT INTO stock_outbox(event_id,payload,created_at) VALUES(?,?,?)",arrayOf(id,payload.toString(),now))
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
+            BrewCloud.queueNow(context)
+            return
+        }
+        require(p.stock>=0)
         val db = writableDatabase
         if (p.id == 0L) insertProduct(db, p)
         else require(db.update("products", productValues(p), "id=?", arrayOf(p.id.toString())) == 1) { "Product not found" }
     }
     fun archiveProduct(p: Product) {
+        require(binding()==null) { "Cloud products must be archived by the owner" }
         val v = ContentValues().apply { put("active", 0) }
         writableDatabase.update("products", v, "id=?", arrayOf(p.id.toString()))
     }
@@ -135,7 +207,9 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
                 stock = c.getInt(c.getColumnIndexOrThrow("stock")),
                 trackStock = c.getInt(c.getColumnIndexOrThrow("track_stock")) == 1,
                 active = c.getInt(c.getColumnIndexOrThrow("active")) == 1,
-                icon = c.getString(c.getColumnIndexOrThrow("icon"))
+                icon = c.getString(c.getColumnIndexOrThrow("icon")),
+                cloudId = c.getString(c.getColumnIndexOrThrow("cloud_id")),
+                cloudVersion = c.getLong(c.getColumnIndexOrThrow("cloud_version"))
             )
         }
         return result
@@ -150,11 +224,14 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
         val db = writableDatabase
         db.beginTransaction()
         try {
+            val bound=binding()
+            if(bound!=null)require(bound.third in listOf("owner","manager","cashier")) { "Cashier permission required" }
             // Re-read stock under the SQLite write transaction; trust no stale UI values.
             lines.groupBy { it.product.id }.forEach { (id, entries) ->
                 val requested = entries.sumOf { it.quantity }
-                db.rawQuery("SELECT stock, track_stock, active FROM products WHERE id=?", arrayOf(id.toString())).use { c ->
+                db.rawQuery("SELECT stock, track_stock, active, cloud_id FROM products WHERE id=?", arrayOf(id.toString())).use { c ->
                     require(c.moveToFirst() && c.getInt(2) == 1) { "A product is no longer available" }
+                    if(bound!=null)require(c.getString(3)!=null && entries.all {it.product.cloudId==c.getString(3)}) { "Refresh the approved cloud catalog" }
                     if (c.getInt(1) == 1) {
                         require(c.getInt(0) >= requested) { "Not enough stock for ${entries.first().product.name}" }
                         db.execSQL("UPDATE products SET stock=stock-? WHERE id=?", arrayOf(requested, id))
@@ -184,7 +261,8 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
             // Existing local sale IDs are not globally unique; use the UUID as cloud sale ID.
             val eventId = UUID.randomUUID().toString()
             val snapshot = JSONObject().apply {
-                put("payload_version", 1)
+                put("payload_version", if(bound==null) 1 else 2)
+                if(bound!=null) { put("organization_id",bound.first);put("branch_id",bound.second) }
                 put("event_type", "sale.completed")
                 put("event_id", eventId)
                 put("client_sale_id", eventId)
@@ -204,6 +282,7 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
                         put(JSONObject().apply {
                             put("line_no", index + 1)
                             put("local_product_id", line.product.id)
+                            if(bound!=null)put("product_id",line.product.cloudId)
                             put("product_name", line.product.name)
                             put("options", line.options)
                             put("quantity", line.quantity)

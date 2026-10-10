@@ -13,7 +13,9 @@ data class Product(
     val stock: Int,
     val trackStock: Boolean = true,
     val active: Boolean = true,
-    val icon: String = "☕"
+    val icon: String = "☕",
+    val cloudId: String? = null,
+    val cloudVersion: Long = 0
 )
 
 data class Extra(val name: String, val priceCents: Int)
