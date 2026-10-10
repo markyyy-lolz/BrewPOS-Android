@@ -367,10 +367,11 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 "Dashboard" -> DashboardView(db, allProducts, allSales,
                     onSell = { tab = "POS" }, onOrders = { tab = "Orders" }, onMenu = { tab = "Menu" })
                 "POS" -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val extraWide = maxWidth >= 950.dp
                     if (maxWidth >= 650.dp) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             ProductCatalog(allProducts.filter { it.active }, Modifier.weight(1f), onProduct = { customizing = it })
-                            CartPanel(cart, Modifier.width(if (maxWidth >= 950.dp) 385.dp else 290.dp).fillMaxHeight(), onSubmit = { service, method, discountText, tenderText, note ->
+                            CartPanel(cart, Modifier.width(if (extraWide) 385.dp else 290.dp).fillMaxHeight(), onSubmit = { service, method, discountText, tenderText, note ->
                                 val discount = parseMoney(discountText)
                                 val tendered = if (method == "Cash") parseMoney(tenderText) else 0
                                 if (discount == null || (method == "Cash" && tendered == null)) alert("Enter valid payment amounts")
