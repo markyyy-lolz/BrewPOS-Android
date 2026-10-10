@@ -22,6 +22,8 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
     val scope=rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var otp by remember { mutableStateOf("") }
+    var codeSent by remember { mutableStateOf(false) }
     var loggedIn by remember { mutableStateOf(BrewCloud.signedIn(ctx)) }
     var linked by remember { mutableStateOf(BrewCloud.signedBranch(ctx)) }
     var response by remember { mutableStateOf<JSONObject?>(null) }
@@ -62,7 +64,31 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
                               .onFailure { status=it.message ?: "Cloud sign-in failed" }
                             busy=false
                         }
-                    },modifier=Modifier.fillMaxWidth()) { Text("Sign in to Cloud") }
+                    },modifier=Modifier.fillMaxWidth()) { Text("Sign in with password") }
+                    HorizontalDivider()
+                    Text("No password? Sign in using your email one-time code.",fontSize=13.sp)
+                    OutlinedButton(enabled=!busy&&email.isNotBlank(),onClick={
+                        busy=true
+                        scope.launch {
+                            runCatching { BrewCloud.sendLoginCode(email) }
+                                .onSuccess { codeSent=true;status="If this email has a BrewPOS account, an OTP has been sent. Check inbox and spam." }
+                                .onFailure { status=it.message ?: "Unable to request email code" }
+                            busy=false
+                        }
+                    },modifier=Modifier.fillMaxWidth()) { Text("Send email sign-in code") }
+                    if(codeSent) {
+                        OutlinedTextField(otp,{ otp=it.filter(Char::isDigit).take(8) },
+                            label={Text("Email verification code")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                        Button(enabled=!busy&&otp.length in 6..8,onClick={
+                            busy=true
+                            scope.launch {
+                                runCatching { BrewCloud.loginWithCode(ctx,email,otp) }
+                                    .onSuccess { otp="";password="";loggedIn=true;status="Email verified. Loading authorized branches." }
+                                    .onFailure { status=it.message ?: "Code invalid or expired" }
+                                busy=false
+                            }
+                        },modifier=Modifier.fillMaxWidth()) { Text("Verify code & sign in") }
+                    }
                 } else {
                     response?.optJSONArray("memberships")?.let { memberships ->
                         for(i in 0 until memberships.length()){
@@ -108,7 +134,7 @@ fun CloudScreen(ctx:Context,db:StoreDb) {
                 }
             }
         }
-        Text("Cloud access requires a verified Supabase Auth staff account, organization membership, and manager approval for this tablet. New checkout sales remain safely queued until acknowledged.",
+        Text("Cloud accounts and Trial / Monthly / Lifetime plans are assigned by Azurate according to your purchased signed BP1 license. Sign in using the verified email, select your authorized branch and register the tablet. Offline sales remain saved until acknowledged.",
             fontSize=12.sp,color=Color(0xFF756458))
     }
 }

@@ -111,6 +111,24 @@ object BrewCloud {
         val res=request(authPath("password"),JSONObject().put("email",email.trim()).put("password",password))
         store(ctx,parseTokens(res))
     }
+    /** Passwordless email OTP: cannot register arbitrary Auth users from the tablet. */
+    suspend fun sendLoginCode(email: String): Unit = withContext(Dispatchers.IO) {
+        val normalized = email.trim().lowercase()
+        require(normalized.contains("@") && normalized.length <= 254) { "Enter a valid email address" }
+        request(BASE + "/auth/v1/otp", JSONObject()
+            .put("email", normalized)
+            .put("create_user", false))
+        Unit
+    }
+    suspend fun loginWithCode(ctx: Context, email: String, code: String): Unit = withContext(Dispatchers.IO) {
+        val normalized = email.trim().lowercase()
+        require(code.matches(Regex("^[0-9]{6,8}$"))) { "Enter the numeric email verification code" }
+        val response = request(BASE + "/auth/v1/verify", JSONObject()
+            .put("email", normalized)
+            .put("token", code)
+            .put("type", "email"))
+        store(ctx, parseTokens(response))
+    }
     private fun validToken(ctx:Context):String {
         val saved=loaded(ctx) ?: throw IOException("Sign into BrewPOS Cloud first")
         if(System.currentTimeMillis()<saved.expiry)return saved.access
