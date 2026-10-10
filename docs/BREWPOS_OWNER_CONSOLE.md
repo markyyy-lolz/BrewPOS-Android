@@ -3,8 +3,9 @@
 ## Deployment status
 
 - Website source: `website/public/owner.html`, `owner.css`, `owner.js` (no embedded private keys).
+- **Live static owner route (Supabase `brewpos-site` v4):** `https://rfxzbuocxersgbshczbj.supabase.co/functions/v1/brewpos-site/owner.html`. The server now serves owner HTML/CSS/JS with no-store headers and restricted CSP. The website is **published**, but sign-in and license issuance are **not yet verified end-to-end**.
 - Cloud API: `supabase/functions/brewpos-owner/index.ts` deployed as `brewpos-owner` to dedicated BrewPOS project `rfxzbuocxersgbshczbj`.
-- Audit table: `public.brew_activation_issues` (RLS on; anon/authenticated cannot read; service role can INSERT/SELECT but not UPDATE/DELETE).
+- Audit table: `public.brew_activation_issues` (RLS on; anon/authenticated cannot read; service role can INSERT/SELECT but not UPDATE/DELETE). Owner migrations `brewpos_owner_issuance_audit` and `brewpos_owner_issuance_ledger_permissions` are already applied to BrewPOS only.
 - Website CI: `npm run check` includes real P-256 ECDSA/DER interoperability tests.
 - **IMPORTANT: owner authentication and live activation issuance are disabled until secrets and a confirmed Supabase Auth owner account are provisioned. No default owner account exists.** The API fails closed (HTTP 503/403). Never describe the website as fully activated before owner provisioning.
 
@@ -38,7 +39,8 @@
 ## Important links
 
 - Owner route on GitHub Pages: `https://markyyy-lolz.github.io/BrewPOS-Android/owner.html` (once site assets are published to `gh-pages`).
-- Supabase function endpoint: `https://rfxzbuocxersgbshczbj.supabase.co/functions/v1/brewpos-owner` (POST; owner JWT required).
+- Hosted owner website: `https://rfxzbuocxersgbshczbj.supabase.co/functions/v1/brewpos-site/owner.html` (GET; public static assets, server login required).
+- Supabase function endpoint: `https://rfxzbuocxersgbshczbj.supabase.co/functions/v1/brewpos-owner` (POST; verified owner JWT required).
 - GitHub source: `markyyy-lolz/BrewPOS-Android`.
 
 ## Operational security

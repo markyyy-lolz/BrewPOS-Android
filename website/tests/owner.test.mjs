@@ -54,3 +54,43 @@ test("Android BP1 private-key compatibility and DER signature are verified",asyn
   assert.throws(()=>p1363ToDer(new Uint8Array(63)),/Unexpected P-256/);
   if(!original)delete globalThis.crypto;
 });
+
+
+test("owner page and Cloudflare CSP allow only dedicated BrewPOS API host",()=>{
+  const html=file("owner.html");
+  const headers=readFileSync(new URL("../public/_headers",import.meta.url),"utf8");
+  assert.match(html,/connect-src 'self' https:\/\/rfxzbuocxersgbshczbj\.supabase\.co/);
+  assert.match(headers,/connect-src 'self' https:\/\/challenges\.cloudflare\.com https:\/\/rfxzbuocxersgbshczbj\.supabase\.co/);
+  assert.doesNotMatch(headers,/SUPABASE_SERVICE_ROLE_KEY|BREWPOS_LICENSE_PRIVATE_KEY/);
+});
+
+test("server BP1 public key is exactly the Android release verifier key",()=>{
+  const android=readFileSync(new URL("../../app/src/main/java/com/brewpos/cafe/LicenseManager.kt",import.meta.url),"utf8");
+  const server=readFileSync(new URL("../../supabase/functions/brewpos-owner/index.ts",import.meta.url),"utf8");
+  const androidKey=android.match(/PUBLIC_KEY_DER_B64\s*=\s*"([^"]+)"/)?.[1];
+  const serverKey=server.match(/const expectedSpki\s*=\s*"([^"]+)"/)?.[1];
+  assert.ok(androidKey,"Android verification public key is defined");
+  assert.equal(serverKey,androidKey,"Owner service must match installed Android verifier exactly");
+  assert.match(android,/SHA256withECDSA/);
+  assert.ok(server.includes("signBP1(signingKeyB64, expectedSpki"));
+});
+
+test("tampered BP1 tokens cannot pass the Android-compatible signature verifier",async()=>{
+  const pair=await webcrypto.subtle.generateKey({name:"ECDSA",namedCurve:"P-256"},true,["sign","verify"]);
+  const privateB64=Buffer.from(await webcrypto.subtle.exportKey("pkcs8",pair.privateKey)).toString("base64");
+  const spki=Buffer.from(await webcrypto.subtle.exportKey("spki",pair.publicKey));
+  const code=(await signBP1(privateB64,spki.toString("base64"),[
+    "1","33cc20ad79509a5d","MONTHLY","1792270000",
+    "28a84904-ef0a-47fa-9531-38c3f193508f","Café Demo"
+  ])).code;
+  const [prefix,payload,signature]=code.split(".");
+  assert.equal(prefix,"BP1");
+  const publicKey=createPublicKey({key:spki,format:"der",type:"spki"});
+  assert.equal(verify("sha256",Buffer.from(payload,"base64url"),publicKey,Buffer.from(signature,"base64url")),true);
+  const altered=Buffer.from(Buffer.from(payload,"base64url").toString("utf8").replace("MONTHLY","LIFETIME"),"utf8");
+  assert.equal(verify("sha256",altered,publicKey,Buffer.from(signature,"base64url")),false);
+  await assert.rejects(()=>signBP1("",spki.toString("base64"),[
+    "1","33cc20ad79509a5d","TRIAL","1792270000",
+    "28a84904-ef0a-47fa-9531-38c3f193508f","Customer"
+  ]),/signing key is not configured/);
+});
