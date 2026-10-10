@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "BrewPOS"
-include(":app")
+include(":app", ":kiosk")
