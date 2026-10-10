@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,12 +18,14 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -33,11 +37,12 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
 
-private val Dark = Color(0xFF30251F)
+private val Dark = Color(0xFF2D1F1A)
+private val Caramel = Color(0xFFC4602F)
 private val Bean = Color(0xFF876043)
 private val Canvas = Color(0xFFF8F5F0)
-private val Moss = Color(0xFF365747)
-private val Soft = Color(0xFFF0E7DA)
+private val Moss = Color(0xFF254D3B)
+private val Soft = Color(0xFFF1EAE0)
 private val KioskColors = lightColorScheme(
     primary=Dark, onPrimary=Color.White, background=Canvas,
     surface=Color.White, onSurface=Dark, secondary=Moss
@@ -66,55 +71,84 @@ class KioskActivity:ComponentActivity() {
 @Composable
 private fun PairingScreen(onPaired:()->Unit) {
     val ctx=LocalContext.current
-    val scope= rememberCoroutineScope()
+    val scope=rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var branches by remember { mutableStateOf<List<KioskBranch>>(emptyList()) }
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().padding(28.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement=Arrangement.Center,
-        horizontalAlignment=Alignment.CenterHorizontally) {
-        Text("☕  BREWPOS SELF ORDER",fontSize=26.sp,fontWeight=FontWeight.Black,color=Dark)
-        Spacer(Modifier.height(12.dp))
-        Text("Manager-only device pairing",fontSize=19.sp,fontWeight=FontWeight.Bold)
-        Text("Customers cannot use the kiosk until an authorized café manager pairs this Android device. No owner password is saved.",
-            color=Bean,modifier=Modifier.widthIn(max=550.dp).padding(14.dp),textAlign=TextAlign.Center)
-        if(branches.isEmpty()) {
-            OutlinedTextField(email,{email=it},label={Text("Manager email")},singleLine=true,
-                modifier=Modifier.widthIn(max=440.dp).fillMaxWidth())
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(password,{password=it},label={Text("Password")},
-                visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                singleLine=true,modifier=Modifier.widthIn(max=440.dp).fillMaxWidth())
-            Spacer(Modifier.height(12.dp))
-            Button(enabled=!busy&&email.isNotBlank()&&password.isNotBlank(), onClick={
-                busy=true
-                scope.launch {
-                    runCatching { KioskCloud.availableBranches(email,password) }
-                        .onSuccess { branches=it;password="";status=if(it.isEmpty())"No authorized owner/manager branch." else "Select a branch to pair." }
-                        .onFailure { status=it.message?:"Cloud authorization failed" }
-                    busy=false
+    BoxWithConstraints(Modifier.fillMaxSize().background(Canvas)) {
+        val wide=maxWidth>=720.dp
+        @Composable fun BrandHero(modifier:Modifier) {
+            Column(modifier.background(Brush.linearGradient(listOf(Moss,Color(0xFF4A7154),Dark)))
+                .padding(26.dp),verticalArrangement=Arrangement.SpaceBetween) {
+                Text("☕  BREWPOS\n      S E L F   O R D E R",color=Color.White,
+                    fontWeight=FontWeight.Black,fontSize=23.sp,lineHeight=27.sp)
+                Column(verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                    Text("Good coffee.\nBrighter days.",color=Color.White,fontWeight=FontWeight.Black,
+                        fontSize=if(wide)37.sp else 29.sp,lineHeight=42.sp)
+                    Text("Your next favorite cup starts here.",color=Color(0xFFE7ECE2),fontSize=13.sp)
                 }
-            }) { Text(if(busy)"Checking..." else "Verify manager & choose branch") }
-        } else {
-            branches.forEach { branch ->
-                OutlinedButton(enabled=!busy,onClick={
-                    busy=true
-                    scope.launch {
-                        runCatching { KioskCloud.pair(ctx,branch) }
-                            .onSuccess { onPaired() }
-                            .onFailure { status=it.message?:"Pairing failed" }
-                        busy=false
+                Text("AZURATE SOFTWARE SOLUTIONS",color=Color(0xFFC4D4C8),fontSize=10.sp,letterSpacing=1.sp)
+            }
+        }
+        @Composable fun Setup(modifier:Modifier) {
+            Box(modifier.padding(18.dp),contentAlignment=Alignment.Center) {
+                Surface(color=Color.White,shape=RoundedCornerShape(25.dp),shadowElevation=5.dp,
+                    modifier=Modifier.fillMaxWidth().widthIn(max=500.dp)) {
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
+                        verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                        Text("Connect your kiosk",fontSize=27.sp,fontWeight=FontWeight.Black,color=Dark)
+                        Text("One-time secure manager setup. Customers will see the self-order menu after pairing.",
+                            color=Bean,fontSize=13.sp,lineHeight=19.sp)
+                        HorizontalDivider(color=Soft)
+                        if(branches.isEmpty()){
+                            OutlinedTextField(email,{email=it},label={Text("Manager email")},
+                                singleLine=true,shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth())
+                            OutlinedTextField(password,{password=it},label={Text("Password")},
+                                visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                singleLine=true,shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth())
+                            Button(enabled=!busy&&email.isNotBlank()&&password.isNotBlank(),onClick={
+                                busy=true
+                                scope.launch {
+                                    runCatching{KioskCloud.availableBranches(email,password)}
+                                        .onSuccess{branches=it;password="";status=if(it.isEmpty())"No authorized branch available."else"Choose your café branch."}
+                                        .onFailure{status=it.message?:"Could not verify manager"}
+                                    busy=false
+                                }
+                            },modifier=Modifier.fillMaxWidth().heightIn(min=55.dp),
+                                shape=RoundedCornerShape(16.dp),
+                                colors=ButtonDefaults.buttonColors(containerColor=Caramel)) {
+                                Text(if(busy)"Verifying…"else"Verify & select branch →",fontWeight=FontWeight.Bold)
+                            }
+                        } else {
+                            Text("Choose a branch",fontWeight=FontWeight.Bold,color=Moss)
+                            branches.forEach{branch->
+                                OutlinedButton(enabled=!busy,onClick={
+                                    busy=true
+                                    scope.launch {
+                                        runCatching{KioskCloud.pair(ctx,branch)}
+                                            .onSuccess{onPaired()}
+                                            .onFailure{status=it.message?:"Pairing failed"}
+                                        busy=false
+                                    }
+                                },modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),
+                                    shape=RoundedCornerShape(15.dp)){Text(branch.name)}
+                            }
+                        }
+                        if(status.isNotBlank())Text(status,color=if(status.contains("fail",true))Color.Red else Moss,fontSize=12.sp)
+                        Text("Manager credentials are not saved to this tablet.",fontSize=11.sp,color=Bean)
                     }
-                },modifier=Modifier.widthIn(max=550.dp).fillMaxWidth()) {
-                    Text(branch.name)
                 }
             }
         }
-        Text(status,color=if(status.contains("failed",true))Color.Red else Moss,modifier=Modifier.padding(18.dp))
-        Text("For secure unattended use, deploy Android lock-task/device-owner mode and restrict system navigation.",
-            color=Bean,fontSize=12.sp,textAlign=TextAlign.Center)
+        if(wide) Row(Modifier.fillMaxSize()){
+            BrandHero(Modifier.weight(1f).fillMaxHeight())
+            Setup(Modifier.weight(1f).fillMaxHeight())
+        }else Column(Modifier.fillMaxSize()){
+            BrandHero(Modifier.fillMaxWidth().height(225.dp))
+            Setup(Modifier.fillMaxWidth().weight(1f))
+        }
     }
 }
 
@@ -152,52 +186,95 @@ private fun CustomerKiosk(){
         }
     }
     Column(Modifier.fillMaxSize().background(Canvas)) {
-        Row(Modifier.fillMaxWidth().background(Dark).padding(horizontal=24.dp,vertical=16.dp),
+        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal=20.dp,vertical=13.dp),
             horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
-            Text("☕  BREWPOS",color=Color.White,fontSize=23.sp,fontWeight=FontWeight.Black)
-            Text("SELF ORDER · ANDROID",color=Color(0xFFE9D6C3),fontSize=13.sp)
+            Text("☕  BREWPOS",color=Dark,fontSize=23.sp,fontWeight=FontWeight.Black)
+            Text("SELF ORDER  •  ANDROID",color=Moss,fontSize=11.sp)
         }
         when(step){
-            "welcome" -> Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
-                Column(horizontalAlignment=Alignment.CenterHorizontally,
-                    verticalArrangement=Arrangement.spacedBy(18.dp)) {
-                    Text("Your next favorite cup",fontSize=38.sp,fontWeight=FontWeight.Black,color=Dark,textAlign=TextAlign.Center)
-                    Text("Browse the menu, customize your drink and choose how to pay.",
-                        textAlign=TextAlign.Center,color=Bean)
-                    if(error.isNotBlank())Text(error,color=Color(0xFFB23E2B),textAlign=TextAlign.Center)
-                    Button(enabled=!loading&&menu.isNotEmpty(),onClick={step="menu"},
-                        modifier=Modifier.widthIn(min=280.dp).height(64.dp)) {
-                        Text(if(loading)"Loading café menu..." else "Touch to order",fontSize=20.sp)
-                    }
-                    OutlinedButton(onClick={load()},enabled=!loading) { Text("Refresh menu") }
-                }
-            }
-            "menu" -> Column(Modifier.fillMaxSize().padding(20.dp)) {
-                Row(verticalAlignment=Alignment.CenterVertically) {
-                    Text("Our menu",fontSize=29.sp,fontWeight=FontWeight.Black,modifier=Modifier.weight(1f))
-                    Button(onClick={step="cart"},enabled=cart.isNotEmpty()) { Text("Cart · ${cart.sumOf { it.quantity }} · ${money(quotedTotal(cart))}") }
-                }
-                val categories=listOf("All")+menu.map{it.category}.distinct().sorted()
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp),
-                    modifier=Modifier.padding(vertical=12.dp)) {
-                    categories.take(7).forEach { cat ->
-                        FilterChip(selected=category==cat,onClick={category=cat},label={Text(cat)})
+            "welcome" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
+                Surface(color=Moss,shape=RoundedCornerShape(26.dp)){
+                    Row(Modifier.fillMaxWidth().padding(24.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("FRESHLY PREPARED",fontSize=10.sp,color=Color(0xFFCEE0D1),
+                                fontWeight=FontWeight.Bold,letterSpacing=1.sp)
+                            Spacer(Modifier.height(9.dp))
+                            Text("What would you\nlike to order?",fontSize=30.sp,
+                                lineHeight=36.sp,fontWeight=FontWeight.Black,color=Color.White)
+                            Text("Good coffee. Brighter days.",fontSize=12.sp,color=Color(0xFFDBE3D9))
+                        }
+                        Text("☕",fontSize=66.sp)
                     }
                 }
-                LazyVerticalGrid(columns=GridCells.Adaptive(190.dp),
-                    horizontalArrangement=Arrangement.spacedBy(12.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                    items(menu.filter{ category=="All"||it.category==category },key={it.id}){product ->
-                        val canOrder=!product.tracked||product.stock.toBigDecimalOrNull()?.signum()==1
-                        Surface(color=Color.White,shape=RoundedCornerShape(18.dp),
-                            modifier=Modifier.fillMaxWidth().clickable(enabled=canOrder){selected=product}) {
-                            Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
-                                Text("☕",fontSize=39.sp)
-                                Text(product.name,fontSize=18.sp,fontWeight=FontWeight.Bold)
-                                Text(product.category,color=Bean)
-                                Text(money(product.price),fontWeight=FontWeight.ExtraBold,fontSize=19.sp)
-                                Text(if(canOrder)"Customize →" else "Sold out",color=if(canOrder)Moss else Color.Red)
+                Text("Choose your order type",fontSize=19.sp,fontWeight=FontWeight.Bold,color=Dark)
+                Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                    listOf("Dine-in" to "🍽","Takeout" to "🛍").forEach{(label,emoji)->
+                        Surface(Modifier.weight(1f).clickable{service=label},
+                            shape=RoundedCornerShape(17.dp),
+                            color=if(service==label)Soft else Color.White,
+                            border=androidx.compose.foundation.BorderStroke(if(service==label)2.dp else 1.dp,
+                                if(service==label)Moss else Soft)){
+                            Column(Modifier.fillMaxWidth().padding(17.dp),
+                                horizontalAlignment=Alignment.CenterHorizontally){
+                                Text(emoji,fontSize=26.sp)
+                                Text(label,fontWeight=FontWeight.Bold,color=Dark)
                             }
                         }
+                    }
+                }
+                if(error.isNotBlank())Text(error,color=Color(0xFFB23E2B))
+                Button(enabled=!loading&&menu.isNotEmpty(),onClick={step="menu"},
+                    modifier=Modifier.fillMaxWidth().height(59.dp),
+                    shape=RoundedCornerShape(17.dp),
+                    colors=ButtonDefaults.buttonColors(containerColor=Caramel)){
+                    Text(if(loading)"Connecting to café…"else"Start ordering  →",
+                        fontWeight=FontWeight.Bold,fontSize=17.sp)
+                }
+                if(menu.isEmpty())OutlinedButton(onClick={load},enabled=!loading,
+                    modifier=Modifier.fillMaxWidth()){Text("Refresh menu")}
+                Text("Browse the menu, customize your drink and choose how to pay.",
+                    color=Bean,fontSize=12.sp,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
+            }
+            "menu" -> Column(Modifier.fillMaxSize().padding(horizontal=16.dp,vertical=9.dp)) {
+                Row(verticalAlignment=Alignment.CenterVertically){
+                    Column(Modifier.weight(1f)){
+                        Text("Explore the menu",fontSize=26.sp,color=Dark,fontWeight=FontWeight.Black)
+                        Text("Made for your next coffee break",color=Bean,fontSize=11.sp)
+                    }
+                    TextButton(onClick={step="welcome"}){Text("← Back")}
+                }
+                val categories=listOf("All")+menu.map{it.category}.distinct().sorted()
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical=10.dp),
+                    horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                    categories.forEach{cat->
+                        FilterChip(selected=category==cat,onClick={category=cat},
+                            label={Text(cat,fontSize=12.sp)},shape=RoundedCornerShape(20.dp),
+                            colors=FilterChipDefaults.filterChipColors(
+                                selectedContainerColor=Moss,selectedLabelColor=Color.White))
+                    }
+                }
+                LazyVerticalGrid(columns=GridCells.Adaptive(158.dp),modifier=Modifier.weight(1f),
+                    horizontalArrangement=Arrangement.spacedBy(12.dp),
+                    verticalArrangement=Arrangement.spacedBy(12.dp),
+                    contentPadding=PaddingValues(bottom=18.dp)){
+                    items(menu.filter{category=="All"||it.category==category},key={it.id}){product->
+                        val canOrder=!product.tracked||product.stock.toBigDecimalOrNull()?.signum()==1
+                        PremiumProductCard(product,canOrder,onClick={selected=product})
+                    }
+                }
+                Surface(color=Color.White,shape=RoundedCornerShape(19.dp),shadowElevation=3.dp){
+                    Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){
+                        Column(Modifier.weight(1f)){
+                            Text("Your order · "+cart.sumOf{it.quantity}+" items",
+                                color=Dark,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                            Text(money(quotedTotal(cart)),color=Caramel,fontSize=24.sp,
+                                fontWeight=FontWeight.Black)
+                        }
+                        Button(onClick={step="cart"},enabled=cart.isNotEmpty(),
+                            colors=ButtonDefaults.buttonColors(containerColor=Caramel),
+                            shape=RoundedCornerShape(14.dp),
+                            modifier=Modifier.heightIn(min=54.dp)){Text("View cart →",fontWeight=FontWeight.Bold)}
                     }
                 }
             }
@@ -205,7 +282,7 @@ private fun CustomerKiosk(){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     TextButton(onClick={step="menu"}){Text("← Menu")}
                     Spacer(Modifier.width(12.dp))
-                    Text("Your order",fontSize=29.sp,fontWeight=FontWeight.Black)
+                    Text("Review your order",fontSize=26.sp,fontWeight=FontWeight.Black,color=Dark)
                 }
                 LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                     items(cart.size) { index ->
@@ -228,7 +305,7 @@ private fun CustomerKiosk(){
                     FilterChip(selected=service=="Dine-in",onClick={service="Dine-in"},label={Text("Dine-in")})
                     FilterChip(selected=service=="Takeout",onClick={service="Takeout"},label={Text("Takeout")})
                 }
-                Text("Estimated total: ${money(quotedTotal(cart))}",fontSize=27.sp,fontWeight=FontWeight.Black)
+                Text("Total: ${money(quotedTotal(cart))}",fontSize=27.sp,fontWeight=FontWeight.Black,color=Caramel)
                 Text("Final price is checked by BrewPOS Cloud before accepting the order.",color=Bean,fontSize=12.sp)
                 Spacer(Modifier.height(9.dp))
                 Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
@@ -241,7 +318,7 @@ private fun CustomerKiosk(){
                                 .onFailure { error=it.message?:"Order could not be submitted" }
                             busy=false
                         }
-                    }){Text("Pay at Cashier",fontSize=17.sp)}
+                    },colors=ButtonDefaults.buttonColors(containerColor=Moss),shape=RoundedCornerShape(16.dp)){Text("Pay at Cashier",fontSize=15.sp)}
                     OutlinedButton(modifier=Modifier.weight(1f).height(62.dp),enabled=!busy&&cart.isNotEmpty(),onClick={
                         busy=true;error=""
                         val id=submission
@@ -251,7 +328,7 @@ private fun CustomerKiosk(){
                                 .onFailure { error=it.message?:"QR Ph is unavailable" }
                             busy=false
                         }
-                    }){Text("Pay via QR Ph",fontSize=17.sp)}
+                    },shape=RoundedCornerShape(16.dp)){Text("Pay via QR Ph",fontSize=15.sp)}
                 }
                 if(error.isNotBlank())Text(error,color=Color.Red,modifier=Modifier.padding(top=12.dp))
             }
@@ -343,4 +420,43 @@ private fun QrImage(data:String){
     if(bitmap!=null)Image(bitmap,contentDescription="Dynamic QR Ph payment code",
         modifier=Modifier.size(240.dp).background(Color.White).padding(8.dp))
     else Text("Unable to display payment QR. Ask the cashier for assistance.",color=Color.Red)
+}
+
+@Composable
+private fun PremiumProductCard(product:KioskProduct,available:Boolean,onClick:()->Unit){
+    val art=when {
+        product.category.contains("pastr",true)->"🥐"
+        product.category.contains("food",true)->"🥪"
+        product.category.contains("tea",true)->"🍵"
+        product.category.contains("non",true)->"🥤"
+        else->"☕"
+    }
+    val tone=when {
+        product.category.contains("tea",true)->Color(0xFFDBE8D5)
+        product.category.contains("pastr",true)->Color(0xFFF0D9BE)
+        else->Color(0xFFE9D9CA)
+    }
+    Surface(Modifier.fillMaxWidth().clickable(enabled=available,onClick=onClick),
+        shape=RoundedCornerShape(20.dp),color=Color.White,shadowElevation=2.dp){
+        Column(Modifier.padding(9.dp)){
+            Box(Modifier.fillMaxWidth().height(118.dp)
+                .background(Brush.verticalGradient(listOf(tone,Canvas)),RoundedCornerShape(14.dp)),
+                contentAlignment=Alignment.Center){
+                Box(Modifier.size(87.dp).background(Color.White.copy(alpha=.3f),CircleShape),
+                    contentAlignment=Alignment.Center){Text(art,fontSize=54.sp)}
+            }
+            Column(Modifier.padding(horizontal=5.dp,vertical=8.dp)){
+                Text(product.name,fontSize=15.sp,fontWeight=FontWeight.Bold,
+                    minLines=2,maxLines=2,color=Dark)
+                Text(product.category,fontSize=11.sp,color=Bean)
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment=Alignment.CenterVertically){
+                    Text(money(product.price),fontSize=16.sp,color=Caramel,
+                        fontWeight=FontWeight.Black,modifier=Modifier.weight(1f))
+                    Text(if(available)"＋"else"×",fontSize=21.sp,
+                        color=if(available)Moss else Color.Red)
+                }
+            }
+        }
+    }
 }
