@@ -29,7 +29,7 @@
 <label>Email address<input id="email" type="email" autocomplete="email" maxlength="254" placeholder="you@example.com" required></label>
 <label>Android Device ID<input id="device" pattern="[A-Fa-f0-9]{16}" maxlength="16" minlength="16" spellcheck="false" autocapitalize="off" placeholder="16-character ID from BrewPOS app" required></label>
 <div id="verification" hidden>
-<label>One-time email code<input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" maxlength="8" placeholder="6–8 digit code"></label>
+<label>One-time email code<input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit code"></label>
 <p class="subtle">Enter the code from your email. Request a new code if it expires.</p>
 </div>
 <button id="submit" type="submit" class="primary full">Send verification code →</button>
