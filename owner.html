@@ -70,7 +70,13 @@
 </div></section>
 <section id="licenses" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Issued license history</h2><p>Last 100 owner-issued activations · Codes themselves are not stored</p></div></div><div class="table-scroll"><table><thead><tr><th>Customer</th><th>Android Device ID</th><th>Plan</th><th>Expiration</th><th>Issued</th></tr></thead><tbody id="licensesRows"></tbody></table></div></div></section>
 <section id="accounts" class="view" hidden>
-<div class="columns">
+<div class="panel"><div class="panel-heading"><div><h2>Email-verified signups awaiting approval</h2><p>These customers created an account using Android email OTP. Registration alone does not grant a paid plan.</p></div></div>
+<div class="table-scroll"><table><thead><tr><th>Email</th><th>Business</th><th>Android ID</th><th>Status</th><th>Requested</th></tr></thead><tbody id="signupRows"></tbody></table></div>
+<p class="fine">Select a pending signup below, issue a BP1 activation for exactly this business/device, then assign the signed license.</p>
+<label class="signup-select">Choose pending signup
+<select id="signupSelection"><option value="">Select an email-verified registration</option></select></label>
+</div>
+<div class="columns accounts-list">
 <div class="panel">
 <div class="panel-heading"><div><h2>Create client cloud account</h2><p>Owner-created passwordless accounts bound to previously issued BP1 licenses</p></div><span class="pill">Owner only</span></div>
 <form id="accountCreateForm" class="issue-form">
