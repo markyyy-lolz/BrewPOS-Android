@@ -129,8 +129,9 @@ sealed class ConflictException(string message):Exception(message);
 sealed class HubDb {
     readonly string _path;
     readonly object _gate=new();
-    public HubDb() {
-        var folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Azurate","BrewPOS.Kiosk.Hub");
+    public HubDb():this(null) {}
+    internal HubDb(string? isolatedRoot) {
+        var folder=isolatedRoot??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Azurate","BrewPOS.Kiosk.Hub");
         Directory.CreateDirectory(folder);_path=Path.Combine(folder,"hub.sqlite3");
         using var db=Open();
         using var cmd=db.CreateCommand();
