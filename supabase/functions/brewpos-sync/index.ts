@@ -58,7 +58,7 @@ Deno.serve(async(req)=>{
       if(membership.length)return answer(409,{error:"This user already belongs to a registered BrewPOS business"});
       const business=String(data.business_name||"").trim();
       const device=String(data.android_device_id||"").trim().toLowerCase();
-      if(business.length<2||business.length>80||/[|\\u0000-\\u001f\\u007f]/.test(business))
+      if(business.length<2||business.length>80||/[|\u0000-\u001f\u007f]/.test(business))
         return answer(400,{error:"Business name must contain 2 to 80 printable characters"});
       if(!/^[0-9a-f]{16}$/.test(device))
         return answer(400,{error:"Android device ID must contain 16 lowercase hex characters"});
