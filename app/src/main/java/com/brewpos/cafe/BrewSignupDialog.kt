@@ -64,8 +64,8 @@ fun BrewSignupDialog(onClose: () -> Unit, onRegistered: () -> Unit) {
                     if(sent) {
                         Text("Enter the OTP emailed to ${email}.",fontSize=13.sp)
                         OutlinedTextField(
-                            value=code,onValueChange={ code=it.filter(Char::isDigit).take(8) },
-                            label={Text("Email OTP (6-8 digits)")},singleLine=true,
+                            value=code,onValueChange={ code=it.filter(Char::isDigit).take(6) },
+                            label={Text("Email OTP (6 digits)")},singleLine=true,
                             modifier=Modifier.fillMaxWidth(),enabled=!busy)
                         TextButton(onClick={
                             sent=false;code="";message=""
@@ -94,7 +94,7 @@ fun BrewSignupDialog(onClose: () -> Unit, onRegistered: () -> Unit) {
                     }
                 }) { Text(if(busy) "Sending…" else "Send verification code") }
             else Button(
-                enabled=!busy && (otpVerified || code.length in 6..8),
+                enabled=!busy && (otpVerified || code.length == 6),
                 onClick={
                     busy=true;message=""
                     scope.launch {
