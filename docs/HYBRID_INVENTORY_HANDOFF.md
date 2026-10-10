@@ -17,7 +17,7 @@ Target: BrewPOS `rfxzbuocxersgbshczbj`. Continue draft PR #10. Do not merge or a
 
 Legacy v1 sale submissions still receive financial ACKs, explicitly `inventory_applied=false`. They lack reliable cross-device product identity; do not infer IDs by product name. Updated clients retain such legacy events for owner reconciliation. Existing unbound Android pending sales prevent branch linking. No historical event is rewritten or silently adopted.
 
-Android currently represents stock in whole units and refuses an entire fractional-stock catalog rather than rounding it. Ingredient recipes, stock transfer workflows, refunds/reversal UI, catalog creation/edit API and a legacy reconciliation UI remain separate work. Windows supports decimal stock. Offline role changes cannot be learned until reconnect; the server validates current permissions on every upload.
+Android schema v4 now caches stock as exact thousandths of a unit, supports fractional catalog values/manager deltas (up to 3 decimals), and retains legacy integer stock plus pending receipts on upgrade. Android sales still decrement one whole menu item per quantity, not fractions of an ingredient. Ingredient recipes, stock transfer workflows, refunds/reversal UI, catalog creation/edit API and a legacy reconciliation UI remain separate work. Windows supports decimal stock. Offline role changes cannot be learned until reconnect; the server validates current permissions on every upload.
 
 ## Rollout
 

@@ -12,7 +12,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** SQLite source of truth. Completed checkout and stock deductions are one transaction. */
-class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos_local.db", null, 3) {
+class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos_local.db", null, 4) {
     private val terminalId: String by lazy {
         val prefs = context.getSharedPreferences("brewpos_terminal", Context.MODE_PRIVATE)
         prefs.getString("installation_uuid", null) ?: UUID.randomUUID().toString().also {
@@ -44,12 +44,14 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
         db.execSQL("CREATE INDEX sale_line_sale_idx ON sale_lines(sale_id)")
         createSyncOutbox(db)
         createInventorySync(db)
+        addPreciseStock(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         require(oldVersion <= newVersion) { "Unsupported schema downgrade" }
         if (oldVersion < 2) createSyncOutbox(db)
         if (oldVersion < 3) createInventorySync(db)
+        if (oldVersion < 4) addPreciseStock(db)
     }
 
     /** Durable local sale queue. */
@@ -74,6 +76,11 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
         db.execSQL("CREATE UNIQUE INDEX products_cloud_id ON products(cloud_id)")
         db.execSQL("CREATE TABLE cloud_binding (singleton INTEGER PRIMARY KEY CHECK(singleton=1), org_id TEXT NOT NULL, branch_id TEXT NOT NULL, role TEXT NOT NULL)")
         db.execSQL("CREATE TABLE stock_outbox (event_id TEXT PRIMARY KEY, payload TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL)")
+    }
+    /** Additive migration: never rewrite old receipts, pending events or whole-unit stock. */
+    private fun addPreciseStock(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE products ADD COLUMN stock_milli INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE products SET stock_milli=CAST(stock AS INTEGER)*1000")
     }
     fun binding(): Triple<String,String,String>? = readableDatabase.rawQuery(
         "SELECT org_id,branch_id,role FROM cloud_binding WHERE singleton=1", null).use {
@@ -109,13 +116,16 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
                 require(p.getString("organization_id")==org && p.getString("branch_id")==branch)
                 val id=UUID.fromString(p.getString("id")).toString()
                 require(seen.add(id)) { "Duplicate catalog product" }
-                val stock=p.get("stock_quantity").toString().toBigDecimal().intValueExact()
+                val stockMilli=parseStockMilli(p.get("stock_quantity").toString())
+                    ?: throw IllegalArgumentException("Cloud stock must have at most 3 decimal places")
+                val stock=Math.floorDiv(stockMilli,1000L)
+                require(stock in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) { "Cloud stock exceeds tablet range" }
                 val price=p.getLong("price_centavos")
                 require(price in 0..Int.MAX_VALUE.toLong())
                 val v=ContentValues().apply {
                     put("cloud_id",id);put("cloud_version",p.getLong("version"))
                     put("name",p.getString("name"));put("category",p.getString("category"))
-                    put("price_cents",price);put("stock",stock)
+                    put("price_cents",price);put("stock",stock.toInt());put("stock_milli",stockMilli)
                     put("track_stock",if(p.getBoolean("track_stock")) 1 else 0)
                     put("active",if(p.getBoolean("active")) 1 else 0)
                 }
@@ -158,7 +168,7 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
     }
     private fun productValues(p: Product) = ContentValues().apply {
         put("name", p.name.trim()); put("category", p.category); put("price_cents", p.priceCents)
-        put("stock", p.stock); put("track_stock", if (p.trackStock) 1 else 0)
+        put("stock", p.stock); put("stock_milli",p.stockMilli);put("track_stock", if (p.trackStock) 1 else 0)
         put("active", if (p.active) 1 else 0); put("icon", p.icon)
     }
     fun saveProduct(p: Product) {
@@ -170,22 +180,22 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
             db.beginTransaction()
             try {
                 val old=products(true).singleOrNull {it.id==p.id} ?: error("Create cloud menu products through the owner catalog first")
-                require(old.cloudId!=null && old.trackStock && old.copy(stock=p.stock)==p) { "Cloud menu details must be changed by the owner; only stock adjustments are available offline" }
-                val delta=p.stock.toLong()-old.stock.toLong()
-                require(delta!=0L && kotlin.math.abs(delta)<=100000) { "Enter a stock change of 1–100,000 units" }
+                require(old.cloudId!=null && old.trackStock && old.copy(stock=p.stock,stockMilli=p.stockMilli)==p) { "Cloud menu details must be changed by the owner; only stock adjustments are available offline" }
+                val deltaMilli=Math.subtractExact(p.stockMilli,old.stockMilli)
+                require(deltaMilli!=0L && kotlin.math.abs(deltaMilli)<=100_000_000L) { "Enter a stock change up to 100,000 units (3 decimals)" }
                 val id=UUID.randomUUID().toString();val now=System.currentTimeMillis()
                 val payload=JSONObject().put("event_id",id).put("event_type","stock.adjusted").put("payload_version",2)
                     .put("installation_id",terminalId).put("organization_id",bound.first).put("branch_id",bound.second)
-                    .put("product_id",old.cloudId).put("delta",delta).put("reason","Manual stock adjustment")
+                    .put("product_id",old.cloudId).put("delta",java.math.BigDecimal.valueOf(deltaMilli,3)).put("reason","Manual stock adjustment")
                     .put("created_at_ms",now)
-                db.execSQL("UPDATE products SET stock=? WHERE id=?",arrayOf(p.stock,p.id))
+                db.execSQL("UPDATE products SET stock=?,stock_milli=? WHERE id=?",arrayOf(p.stock,p.stockMilli,p.id))
                 db.execSQL("INSERT INTO stock_outbox(event_id,payload,created_at) VALUES(?,?,?)",arrayOf(id,payload.toString(),now))
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
             BrewCloud.queueNow(context)
             return
         }
-        require(p.stock>=0)
+        require(p.stockMilli>=0)
         val db = writableDatabase
         if (p.id == 0L) insertProduct(db, p)
         else require(db.update("products", productValues(p), "id=?", arrayOf(p.id.toString())) == 1) { "Product not found" }
@@ -204,12 +214,13 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
                 name = c.getString(c.getColumnIndexOrThrow("name")),
                 category = c.getString(c.getColumnIndexOrThrow("category")),
                 priceCents = c.getInt(c.getColumnIndexOrThrow("price_cents")),
-                stock = c.getInt(c.getColumnIndexOrThrow("stock")),
+                stock = Math.floorDiv(c.getLong(c.getColumnIndexOrThrow("stock_milli")),1000L).toInt(),
                 trackStock = c.getInt(c.getColumnIndexOrThrow("track_stock")) == 1,
                 active = c.getInt(c.getColumnIndexOrThrow("active")) == 1,
                 icon = c.getString(c.getColumnIndexOrThrow("icon")),
                 cloudId = c.getString(c.getColumnIndexOrThrow("cloud_id")),
-                cloudVersion = c.getLong(c.getColumnIndexOrThrow("cloud_version"))
+                cloudVersion = c.getLong(c.getColumnIndexOrThrow("cloud_version")),
+                stockMilli = c.getLong(c.getColumnIndexOrThrow("stock_milli"))
             )
         }
         return result
@@ -229,12 +240,16 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
             // Re-read stock under the SQLite write transaction; trust no stale UI values.
             lines.groupBy { it.product.id }.forEach { (id, entries) ->
                 val requested = entries.sumOf { it.quantity }
-                db.rawQuery("SELECT stock, track_stock, active, cloud_id FROM products WHERE id=?", arrayOf(id.toString())).use { c ->
+                db.rawQuery("SELECT stock_milli, track_stock, active, cloud_id FROM products WHERE id=?", arrayOf(id.toString())).use { c ->
                     require(c.moveToFirst() && c.getInt(2) == 1) { "A product is no longer available" }
                     if(bound!=null)require(c.getString(3)!=null && entries.all {it.product.cloudId==c.getString(3)}) { "Refresh the approved cloud catalog" }
                     if (c.getInt(1) == 1) {
-                        require(c.getInt(0) >= requested) { "Not enough stock for ${entries.first().product.name}" }
-                        db.execSQL("UPDATE products SET stock=stock-? WHERE id=?", arrayOf(requested, id))
+                        val requestedMilli=requested.toLong()*1000L
+                        val availableMilli=c.getLong(0)
+                        require(availableMilli >= requestedMilli) { "Not enough stock for ${entries.first().product.name}" }
+                        val remaining=availableMilli-requestedMilli
+                        db.execSQL("UPDATE products SET stock_milli=?, stock=? WHERE id=?",
+                            arrayOf(remaining,Math.floorDiv(remaining,1000L),id))
                     }
                 }
             }

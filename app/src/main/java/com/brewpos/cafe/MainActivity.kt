@@ -457,7 +457,7 @@ private fun ProductCatalog(products: List<Product>, modifier: Modifier, onProduc
                             maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(8.dp))
                         Text(peso(p.priceCents.toLong()), fontWeight = FontWeight.ExtraBold, color = Coffee, fontSize = 17.sp)
-                        Text(if (!p.trackStock) "Available" else if (p.stock == 0) "Out of stock" else "${p.stock} left",
+                        Text(if (!p.trackStock) "Available" else if (p.stockMilli < 0L) "${p.stockLabel} (shortage)" else if (p.stockMilli == 0L) "Out of stock" else "${p.stockLabel} left",
                             color = if (p.trackStock && p.stock < 6) Color(0xFFB04B2E) else Leaf, fontSize = 11.sp)
                     }
                 }
@@ -506,7 +506,7 @@ private fun CustomizeDialog(product: Product, existingCount: Int, onClose: () ->
                     TextButton(onClick = { if (qty < 99) qty++ }) { Text("+", fontSize = 22.sp) }
                 }
                 Text("Total: ${peso((unit.toLong() * qty))}", fontSize = 22.sp, fontWeight = FontWeight.Black)
-                if (product.trackStock) Text("In stock: ${product.stock}; in cart: $existingCount", color = Cocoa, fontSize = 12.sp)
+                if (product.trackStock) Text("In stock: ${product.stockLabel}; in cart: $existingCount", color = Cocoa, fontSize = 12.sp)
             }
         },
         confirmButton = {
@@ -664,7 +664,7 @@ private fun MenuView(products: List<Product>, onAdd: () -> Unit, onEdit: (Produc
                         Text(p.icon, fontSize = 31.sp, modifier = Modifier.padding(end = 10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(p.name, fontWeight = FontWeight.Bold)
-                            Text("${p.category} • ${if (p.active) (if (p.trackStock) "${p.stock} units" else "Untracked stock") else "Archived"}", color = Cocoa, fontSize = 11.sp)
+                            Text("${p.category} • ${if (p.active) (if (p.trackStock) "${p.stockLabel} units" else "Untracked stock") else "Archived"}", color = Cocoa, fontSize = 11.sp)
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text(peso(p.priceCents.toLong()), fontWeight = FontWeight.Bold)
@@ -693,20 +693,22 @@ private fun MenuView(products: List<Product>, onAdd: () -> Unit, onEdit: (Produc
 private fun ProductEditor(product: Product?, onClose: () -> Unit, onSave: (Product) -> Unit) {
     var name by remember(product?.id) { mutableStateOf(product?.name ?: "") }
     var price by remember(product?.id) { mutableStateOf(product?.priceCents?.let { "%.2f".format(java.util.Locale.US, it / 100.0) } ?: "") }
-    var stock by remember(product?.id) { mutableStateOf(product?.stock?.toString() ?: "0") }
+    var stock by remember(product?.id) { mutableStateOf(product?.stockLabel ?: "0") }
     var category by remember(product?.id) { mutableStateOf(product?.category ?: "Coffee") }
     var icon by remember(product?.id) { mutableStateOf(product?.icon ?: "☕") }
     var trackStock by remember(product?.id) { mutableStateOf(product?.trackStock ?: true) }
     val priceCents = parseMoney(price)
-    val stockCount = stock.toIntOrNull()
+    val stockMilli = parseStockMilli(stock)
+    val stockCount = stockMilli?.let { Math.floorDiv(it,1000L) }
+        ?.takeIf { it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }?.toInt()
     AlertDialog(onDismissRequest = onClose, title = { Text(if (product == null) "Add product" else "Edit product") },
         text = {
             Column(Modifier.heightIn(max = 450.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Product name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 OutlinedTextField(price, { price = it }, label = { Text("Regular price ₱") }, modifier = Modifier.fillMaxWidth(),
                     singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                OutlinedTextField(stock, { stock = it }, label = { Text("Stock (units)") }, modifier = Modifier.fillMaxWidth(),
-                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                OutlinedTextField(stock, { stock = it }, label = { Text("Stock (units, up to 3 decimals)") }, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                 Text("Category", fontWeight = FontWeight.Bold)
                 Column {
                     listOf(listOf("Coffee", "Non-Coffee"), listOf("Tea", "Pastries")).forEach { group ->
@@ -725,10 +727,10 @@ private fun ProductEditor(product: Product?, onClose: () -> Unit, onSave: (Produ
         }, confirmButton = {
             Button(onClick = {
                 onSave(Product(id = product?.id ?: 0L, name = name.trim(), category = category,
-                    priceCents = priceCents ?: 0, stock = stockCount ?: 0,
+                    priceCents = priceCents ?: 0, stock = stockCount ?: 0, stockMilli = stockMilli ?: 0L,
                     cloudId = product?.cloudId, cloudVersion = product?.cloudVersion ?: 0,
                     trackStock = trackStock, active = true, icon = icon.ifBlank { "☕" }.take(4)))
-            }, enabled = name.isNotBlank() && priceCents != null && stockCount != null && stockCount >= 0) { Text("Save") }
+            }, enabled = name.isNotBlank() && priceCents != null && stockCount != null && stockMilli != null && (stockMilli >= 0L || product?.cloudId != null)) { Text("Save") }
         }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })
 }
 

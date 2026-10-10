@@ -49,6 +49,39 @@ class InventorySyncTest {
         db.replaceCatalog(org,branch,catalog(15));assertEquals(15,db.products().single().stock)
         assertEquals(1,db.sales().size)
     }
+    @Test fun fractionalCloudCatalogAndOfflineCheckoutKeepExactStock() {
+        db.bind(org,branch,"owner")
+        db.replaceCatalog(org,branch,catalog().also { it.getJSONObject(0).put("stock_quantity","2.500") })
+        assertEquals("2.5",db.products().single().stockLabel)
+        checkout()
+        assertEquals("0.5",db.products().single().stockLabel)
+        assertThrows(IllegalArgumentException::class.java) { checkout() }
+        val event=db.pendingSyncBatch().single()
+        db.close();db=StoreDb(context)
+        assertEquals("0.5",db.products().single().stockLabel)
+        assertTrue(db.acknowledgeSyncedEvent(event.first))
+        db.replaceCatalog(org,branch,catalog().also { it.getJSONObject(0).put("stock_quantity","1.125") })
+        assertEquals("1.125",db.products().single().stockLabel)
+    }
+    @Test fun fractionalAdjustmentIsAuditableAndLossless() {
+        db.bind(org,branch,"manager")
+        db.replaceCatalog(org,branch,catalog().also { it.getJSONObject(0).put("stock_quantity","2.500") })
+        val p=db.products().single()
+        db.saveProduct(p.copy(stock=3,stockMilli=3125L))
+        assertEquals("3.125",db.products().single().stockLabel)
+        val event=JSONObject(db.pendingSyncBatch().single().second)
+        assertEquals("stock.adjusted",event.getString("event_type"))
+        assertEquals(0,java.math.BigDecimal("0.625").compareTo(event.get("delta").toString().toBigDecimal()))
+        assertEquals(product,event.getString("product_id"))
+    }
+    @Test fun fractionalOverprecisionRollsBackEntireCatalog() {
+        db.bind(org,branch,"owner")
+        db.replaceCatalog(org,branch,catalog())
+        assertThrows(IllegalArgumentException::class.java) {
+            db.replaceCatalog(org,branch,catalog().also { it.getJSONObject(0).put("stock_quantity","3.0001") })
+        }
+        assertEquals("20",db.products().single().stockLabel)
+    }
     @Test fun branchCannotBeChangedOrForeignCatalogImported() {
         db.bind(org,branch,"owner");db.replaceCatalog(org,branch,catalog())
         assertThrows(IllegalArgumentException::class.java) {db.bind(org,UUID.randomUUID().toString(),"owner")}
@@ -80,6 +113,7 @@ class InventorySyncTest {
         old.close()
         db=StoreDb(context)
         assertEquals(7,db.products().single().stock)
+        assertEquals(7000L,db.products().single().stockMilli)
         assertNull(db.products().single().cloudId)
         assertEquals(1,db.pendingSyncCount())
         assertEquals("legacy",db.pendingSyncBatch().single().first)
