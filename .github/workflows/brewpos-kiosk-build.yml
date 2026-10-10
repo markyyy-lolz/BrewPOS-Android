@@ -1,0 +1,86 @@
+name: BrewPOS Android Windows Kiosk Development Build
+on:
+  push:
+    branches: [feature/brewpos-self-order-kiosk-android-windows]
+    paths: ["kiosk/**", ".github/workflows/brewpos-kiosk-build.yml"]
+  pull_request:
+    paths: ["kiosk/**", ".github/workflows/brewpos-kiosk-build.yml"]
+  workflow_dispatch:
+concurrency:
+  group: brewpos-kiosk-build
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Install Android SDK 36
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Lint JavaScript
+        run: node --check kiosk/ui/app.js
+      - name: Compile kiosk Android APK
+        run: gradle --no-daemon --project-dir kiosk/android assembleDebug
+      - name: Upload Android kiosk dev APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrewPOS-Kiosk-Android-v0.1.0-debug
+          path: kiosk/android/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Build local HTTPS hub
+        shell: pwsh
+        run: dotnet build kiosk/hub/BrewPOS.Kiosk.Hub.csproj -c Release -warnaserror
+      - name: Verify hub idempotency and payment release tests
+        shell: pwsh
+        run: dotnet test kiosk/hub-tests/BrewPOS.Kiosk.Tests.csproj -c Release --verbosity normal
+      - name: Build Windows kiosk and KDS
+        shell: pwsh
+        run: dotnet build kiosk/windows/BrewPOS.Kiosk.Windows.csproj -c Release -warnaserror
+      - name: Publish Windows kiosk x64
+        shell: pwsh
+        run: |
+          dotnet publish kiosk/windows/BrewPOS.Kiosk.Windows.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o kiosk/publish
+      - name: Publish local LAN hub
+        shell: pwsh
+        run: |
+          dotnet publish kiosk/hub/BrewPOS.Kiosk.Hub.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o kiosk/hub-publish
+      - name: Inno Setup installer
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "kiosk/installer/BrewPOS-Kiosk.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Setup compiler failed" }
+      - name: Upload Windows kiosk installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrewPOS-Kiosk-Windows-v0.1.0-Setup
+          path: kiosk/artifacts/*.exe
+          if-no-files-found: error
+      - name: Upload Windows LAN hub
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrewPOS-Kiosk-LAN-Hub-Windows-v0.1.0
+          path: kiosk/hub-publish/
+          if-no-files-found: error
