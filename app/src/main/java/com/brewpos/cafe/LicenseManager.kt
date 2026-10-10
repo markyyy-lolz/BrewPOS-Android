@@ -8,7 +8,10 @@ import java.util.Base64
 
 /** Offline-verifiable ECDSA licenses. The private signing key MUST stay on the owner's computer. */
 object LicenseManager {
-    private const val PUBLIC_KEY_DER_B64 = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEubpoEi/rbJAmA6XF4jgNecQqNq0AD3hfbKaEIpk2XuCW6l2UkboGuqUq25E470PETTrX/N8/5NyPKskSjmEgMw=="
+    // Current Supabase Vault-backed owner signer. Private key never ships in the APK.
+    private const val PUBLIC_KEY_DER_B64 = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAES/6XwBwEcfBCyJ9riMKmCMxY7BohpCKbL8cbMWcHPr4jfUWJXIQmDinKCSKpoJ60ty3rNb9QyIU6XGdjb/NLWw=="
+    // Accept older issued BP1 signatures too, without invalidating existing offline activations.
+    private const val LEGACY_PUBLIC_KEY_DER_B64 = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEubpoEi/rbJAmA6XF4jgNecQqNq0AD3hfbKaEIpk2XuCW6l2UkboGuqUq25E470PETTrX/N8/5NyPKskSjmEgMw=="
     private const val GRACE_MILLIS = 72L * 60 * 60 * 1000
     private const val CLOCK_LEEWAY_MILLIS = 5L * 60 * 1000
 
@@ -24,11 +27,17 @@ object LicenseManager {
             val parts = token.trim().split('.')
             require(parts.size == 3 && parts[0] == "BP1")
             val raw = decode(parts[1]); val signatureBytes = decode(parts[2])
-            val key = KeyFactory.getInstance("EC").generatePublic(X509EncodedKeySpec(Base64.getDecoder().decode(PUBLIC_KEY_DER_B64)))
-            val verifier = Signature.getInstance("SHA256withECDSA")
-            verifier.initVerify(key)
-            verifier.update(raw)
-            require(verifier.verify(signatureBytes))
+            require(listOf(PUBLIC_KEY_DER_B64, LEGACY_PUBLIC_KEY_DER_B64).any { encoded ->
+                runCatching {
+                    val key = KeyFactory.getInstance("EC").generatePublic(
+                        X509EncodedKeySpec(Base64.getDecoder().decode(encoded))
+                    )
+                    val verifier = Signature.getInstance("SHA256withECDSA")
+                    verifier.initVerify(key)
+                    verifier.update(raw)
+                    verifier.verify(signatureBytes)
+                }.getOrDefault(false)
+            })
             val fields = String(raw, StandardCharsets.UTF_8).split('|')
             require(fields.size == 6 && fields[0] == "1")
             val version = fields[0]; val device = fields[1]; val plan = fields[2]
