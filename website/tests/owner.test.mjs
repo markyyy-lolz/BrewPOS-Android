@@ -67,12 +67,12 @@ test("owner page and Cloudflare CSP allow only dedicated BrewPOS API host",()=>{
 test("server BP1 public key is exactly the Android release verifier key",()=>{
   const android=readFileSync(new URL("../../app/src/main/java/com/brewpos/cafe/LicenseManager.kt",import.meta.url),"utf8");
   const server=readFileSync(new URL("../../supabase/functions/brewpos-owner/index.ts",import.meta.url),"utf8");
-  const androidKey=android.match(/PUBLIC_KEY_DER_B64\\s*=\\s*"([^"]+)"/)?.[1];
-  const serverKey=server.match(/const expectedSpki\\s*=\\s*"([^"]+)"/)?.[1];
+  const androidKey=android.match(/PUBLIC_KEY_DER_B64\s*=\s*"([^"]+)"/)?.[1];
+  const serverKey=server.match(/const expectedSpki\s*=\s*"([^"]+)"/)?.[1];
   assert.ok(androidKey,"Android verification public key is defined");
   assert.equal(serverKey,androidKey,"Owner service must match installed Android verifier exactly");
   assert.match(android,/SHA256withECDSA/);
-  assert.match(server,/signBP1\\(signingKeyB64, expectedSpki/);
+  assert.ok(server.includes("signBP1(signingKeyB64, expectedSpki"));
 });
 
 test("tampered BP1 tokens cannot pass the Android-compatible signature verifier",async()=>{
