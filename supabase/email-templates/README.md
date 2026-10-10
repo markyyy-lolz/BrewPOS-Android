@@ -2,6 +2,17 @@
 
 The default "Confirm your email address" email containing a **link** is NOT the six-digit OTP required by BrewPOS. Calling `/auth/v1/otp` does not make Supabase automatically send digits; it uses the content of the Auth email templates. Supabase officially supports `{{ .Token }}` for a six-digit email OTP.
 
+## Also fix the localhost:3000 sign-in redirect (required)
+
+Go to https://supabase.com/dashboard/project/rfxzbuocxersgbshczbj/auth/url-configuration in the **BrewPOS project**.
+
+- **Site URL:** `https://markyyy-lolz.github.io/BrewPOS-Android/signup.html` (replace any `http://localhost:3000`).
+- **Redirect URLs:** include the exact `https://markyyy-lolz.github.io/BrewPOS-Android/signup.html` and save.
+- GitHub Pages is the ONLY public website host; Supabase is the authentication and API backend.
+- The Android and GitHub Pages OTP endpoints now explicitly request the same allow-listed GitHub Pages redirect. Until you save the Supabase URL configuration, fallback email sign-in links can still resolve to localhost.
+- If an older Magic Link was already clicked, request a fresh code/link **after saving**. Do not copy a JWT fragment from the old localhost URL. Treat any disclosed `access_token` or `refresh_token` as sensitive and revoke the affected session.
+- `signup.js` removes legacy Supabase token fragments from the address bar as soon as it loads and permits a verified link fallback only as a **pending application**, never a paid activation. Numeric OTP is still the recommended signup path.
+
 ## Save these TWO templates in the BrewPOS Supabase project
 
 Project: `rfxzbuocxersgbshczbj` (BrewPOS only)
