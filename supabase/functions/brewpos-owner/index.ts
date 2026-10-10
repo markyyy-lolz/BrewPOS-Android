@@ -144,17 +144,16 @@ async function provisionCustomer(input: Record<string,unknown>, userId: string) 
     organization_id:orgId,name:"Main Branch",timezone:"Asia/Manila"
   })];
   const branchId=String(branches[0].id);
-  // Invitation link is configured for GitHub Pages account password setup.
-  // Supabase Auth redirect allow-list and SMTP must be configured by owner.
-  const redirect="https://markyyy-lolz.github.io/BrewPOS-Android/account-setup.html";
-  const invite=await fetch(base+"/auth/v1/invite?redirect_to="+encodeURIComponent(redirect),{
-    method:"POST",
-    headers:{"apikey":serviceKey,"authorization":"Bearer "+serviceKey,"content-type":"application/json"},
-    body:JSON.stringify({email})
+  // Supabase Auth Admin creates a passwordless user only. The client proves
+  // email ownership via OTP inside BrewPOS Android; no public signup is allowed.
+  const createUser=await fetch(base+"/auth/v1/admin/users",{
+    method:"POST",headers:{"apikey":serviceKey,"authorization":"Bearer "+serviceKey,
+      "content-type":"application/json"},
+    body:JSON.stringify({email,email_confirm:false})
   });
-  if(!invite.ok)throw Error("Supabase Auth could not invite this email. Check Auth SMTP and invite settings; no branch access was granted.");
-  const invited=await invite.json();
-  if(!uuid(invited?.id))throw Error("Auth invite did not provide a valid user ID");
+  if(!createUser.ok)throw Error("Could not create Auth user; check whether email already exists. No merchant membership was granted.");
+  const invited=await createUser.json();
+  if(!uuid(invited?.id))throw Error("Auth creation did not provide a valid user ID");
   const invitedUser=String(invited.id);
   // If a retry happens after partial onboarding, avoid duplicate memberships.
   const existing=await rows("brew_memberships?select=id&user_id=eq."+invitedUser+"&organization_id=eq."+orgId);
@@ -168,7 +167,7 @@ async function provisionCustomer(input: Record<string,unknown>, userId: string) 
   });
   return {created:true,id:account.id,email,plan:issue.plan,
     organization_id:orgId,branch_id:branchId,
-    notice:"Invitation requested. Client must verify email, set password, then sign in and register their tablet."};
+    notice:"Account created. Customer signs in from BrewPOS Android using an email OTP, then registers the tablet."};
 }
 async function changeCustomerLicense(input: Record<string,unknown>) {
   if(!uuid(input.account_id))throw Error("Choose a customer account");
