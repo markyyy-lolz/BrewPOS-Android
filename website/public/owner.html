@@ -18,7 +18,7 @@
  </div><small class="art-footer">AZURATE SOFTWARE SOLUTIONS · PHILIPPINES</small></div>
  <div class="auth-form-area"><div class="auth-mobile-logo">☕ BrewPOS <span>/ Owner Console</span></div><form id="loginForm" class="auth-card">
    <div class="tag"><span class="dot"></span> AUTHORIZED OWNER ACCESS</div>
-   <h1>Welcome back.</h1><p>Sign in using your verified Azurate owner account. Issuing codes requires the original private signing key configured on the server.</p>
+   <h1>Welcome back.</h1><p>Sign in to approve café clients, manage Cloud POS accounts and issue secure offline activation keys.</p>
    <label>Email address<input type="email" name="email" placeholder="owner@yourdomain.com" autocomplete="username" required></label>
    <label>Password<input type="password" name="password" placeholder="Enter your password" autocomplete="current-password" required></label>
    <button type="submit" class="primary full" id="loginButton">Sign in to dashboard <span aria-hidden="true">→</span></button>
@@ -31,7 +31,9 @@
 <div class="rail-eyebrow">WORKSPACE</div>
 <nav id="navTabs" aria-label="Owner dashboard">
 <button data-tab="overview" class="active"><span>▦</span> Overview</button>
-<button data-tab="activation"><span>◈</span> Activation generator</button>
+<button data-tab="approvals"><span>✓</span> Client approvals <b id="pendingCount" class="nav-count">0</b></button>
+<button data-tab="accounts"><span>▣</span> Cloud accounts</button>
+<button data-tab="activation"><span>◈</span> Offline licenses</button>
 <button data-tab="licenses"><span>▤</span> Issued licenses</button>
 <button data-tab="devices"><span>▣</span> Devices</button>
 <button data-tab="sales"><span>▥</span> Cloud sales</button>
@@ -48,18 +50,35 @@
 <article class="metric"><span>Issued licenses <i>◈</i></span><strong id="licenseCount">0</strong><small>Most recent 200 audit records</small></article>
 </div>
 <div class="panels">
-<div class="panel featured"><div class="overline">AZURATE LICENSING</div><h2>Activate the next device.</h2><p>Create secure 7-day trials, 30-day monthly licenses, or device-bound lifetime activation. All keys are signed on the server.</p><button id="goActivation" class="light" type="button">Open activation generator →</button><div class="feature-art" aria-hidden="true">☕ <span>BP1</span></div></div>
-<div class="panel"><div class="panel-heading"><div><h2>Cloud status</h2><p>Dedicated BrewPOS workspace</p></div><span class="pill">Secure</span></div><div class="info-line"><span>Online source</span><strong>Supabase BrewPOS</strong></div><div class="info-line"><span>Organizations</span><strong id="orgCount">0</strong></div><div class="info-line"><span>Sync visibility</span><strong>Cloud-synced only</strong></div><p class="fine">Offline tablet sales appear after successful sync. This is not a consolidated all-time accounting report.</p></div>
+<div class="panel featured"><div class="overline">TWO ACCESS MODES</div>
+<h2>Cloud account or offline license.</h2>
+<p>Approve a verified café business for account login, or generate a device-bound key for offline POS. Manage both from this dashboard.</p>
+<button id="goApprovals" class="light" type="button">Review client approvals →</button>
+<div class="feature-art" aria-hidden="true">☁ <span>BP1</span></div></div>
+<div class="panel"><div class="panel-heading"><div><h2>Quick access</h2><p>Cloud and offline licensing</p></div><span class="pill">Secure</span></div>
+<button id="goAccounts" class="outline full" type="button">Manage cloud accounts →</button>
+<button id="goActivation" class="outline full" type="button">Issue offline license →</button>
+<div class="info-line"><span>Organizations</span><strong id="orgCount">0</strong></div>
+<p class="fine">Cloud approval is independent of offline BP1 keys. Staff accounts require a verified email and approved organization membership.</p></div>
 </div></section>
+<section id="approvals" class="view" hidden>
+<div class="panel"><div class="panel-heading"><div><h2>Pending client registrations</h2><p>Review verified customer signups before granting any cloud access. Approval provisions a separate café organization and branch.</p></div><span class="pill">Owner review</span></div>
+<div class="table-scroll"><table><thead><tr><th>Business</th><th>Verified email</th><th>Device ID</th><th>Requested</th><th>Cloud plan</th><th>Actions</th></tr></thead><tbody id="approvalRows"></tbody></table></div>
+<p class="fine">Cloud Trial: 7 days, Monthly: 30 days, Lifetime: no expiry. Approval does not issue a device-bound offline BP1 license. Access can be suspended later.</p></div>
+</section>
+<section id="accounts" class="view" hidden>
+<div class="panel"><div class="panel-heading"><div><h2>Cloud customer accounts</h2><p>Verified tenants, account plans and access controls.</p></div><span class="pill">Tenant-isolated</span></div>
+<div class="table-scroll"><table><thead><tr><th>Client email</th><th>Plan</th><th>Expires</th><th>Status</th><th>Account type</th><th>Action</th></tr></thead><tbody id="accountRows"></tbody></table></div></div>
+</section>
 <section id="activation" class="view" hidden>
 <div class="columns">
-<div class="panel"><div class="panel-heading"><div><h2>Generate an activation</h2><p>Authenticated Azurate owner tools</p></div><span class="pill">ECDSA P-256</span></div>
+<div class="panel"><div class="panel-heading"><div><h2>Generate an offline license</h2><p>Device-bound activation — no cloud login required</p></div><span class="pill">ECDSA P-256</span></div>
 <form id="issueForm" class="issue-form">
 <label>Customer / business name<input id="customer" name="customer" maxlength="80" minlength="2" placeholder="Example Coffee Shop" required></label>
 <label>Android Device ID<input id="androidId" name="androidId" pattern="[a-fA-F0-9]{16}" minlength="16" maxlength="16" placeholder="16-character Android ID" autocapitalize="off" spellcheck="false" required></label>
 <label>License plan<select id="plan" name="plan" required><option value="TRIAL">Trial — 7 days</option><option value="MONTHLY">Monthly — 30 days</option><option value="LIFETIME">Lifetime — device-bound</option></select></label>
-<div class="issue-note">Only the server can issue a valid code. The Android Device ID must match the code's assigned device exactly. Monthly and trial licenses retain the app's 72-hour offline grace behavior.</div>
-<button id="issueButton" class="primary full" type="submit">◈ Generate signed activation code</button>
+<div class="issue-note">Offline mode uses a signed license key. Cloud mode uses an approved email account instead; no offline license needed.</div>
+<button id="issueButton" class="primary full" type="submit">◈ Generate signed offline activation</button>
 </form>
 </div>
 <div class="panel result-panel"><div class="panel-heading"><div><h2>Activation code</h2><p>Share it securely with your client</p></div></div>
