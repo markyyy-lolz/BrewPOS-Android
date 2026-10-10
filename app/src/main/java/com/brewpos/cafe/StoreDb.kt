@@ -33,7 +33,7 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
             created_at INTEGER NOT NULL, service TEXT NOT NULL, payment TEXT NOT NULL,
             subtotal INTEGER NOT NULL, discount INTEGER NOT NULL, total INTEGER NOT NULL,
             tendered INTEGER NOT NULL, change_cents INTEGER NOT NULL, notes TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'Queued'
+            status TEXT NOT NULL DEFAULT 'Served'
         )""")
         db.execSQL("""CREATE TABLE sale_lines (
             id INTEGER PRIMARY KEY AUTOINCREMENT, sale_id INTEGER NOT NULL REFERENCES sales(id),
@@ -119,9 +119,13 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
         if (p.id == 0L) insertProduct(db, p)
         else require(db.update("products", productValues(p), "id=?", arrayOf(p.id.toString())) == 1) { "Product not found" }
     }
+    /** Soft-delete only. Product IDs and historical sale lines must never be deleted. */
     fun archiveProduct(p: Product) {
+        require(p.id > 0L) { "Product has not been saved" }
         val v = ContentValues().apply { put("active", 0) }
-        writableDatabase.update("products", v, "id=?", arrayOf(p.id.toString()))
+        require(writableDatabase.update("products", v, "id=? AND active=1", arrayOf(p.id.toString())) == 1) {
+            "Product already removed or unavailable"
+        }
     }
     fun products(includeArchived: Boolean = false): List<Product> {
         val result = mutableListOf<Product>()
@@ -167,7 +171,7 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
                 put("receipt_no", temp); put("created_at", now); put("service", service)
                 put("payment", payment); put("subtotal", totals.subtotal)
                 put("discount", totals.discount); put("total", totals.payable)
-                put("tendered", acceptedTender); put("change_cents", change); put("notes", notes); put("status", "Queued")
+                put("tendered", acceptedTender); put("change_cents", change); put("notes", notes); put("status", "Served")
             }
             val saleId = db.insertOrThrow("sales", null, v)
             val receiptNo = "BP-${SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(now))}-${saleId.toString().padStart(5, '0')}"
@@ -223,7 +227,7 @@ class StoreDb(private val context: Context) : SQLiteOpenHelper(context, "brewpos
             })
             db.setTransactionSuccessful()
             return Sale(saleId, receiptNo, now, service, payment, totals.subtotal,
-                totals.discount, totals.payable, acceptedTender, change, notes, "Queued")
+                totals.discount, totals.payable, acceptedTender, change, notes, "Served")
         } finally { db.endTransaction() }
     }
 

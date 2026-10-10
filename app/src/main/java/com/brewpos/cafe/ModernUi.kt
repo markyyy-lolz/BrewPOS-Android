@@ -40,7 +40,7 @@ fun BrewSidebar(selected: String, onSelect: (String) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(icon, color = if (chosen) Color.White else Color(0xFFCFB7A6), fontSize = 21.sp)
-                Text(key, color = if (chosen) Color.White else Color(0xFFC9B6A6),
+                Text(if (key == "Orders") "History" else key, color = if (chosen) Color.White else Color(0xFFC9B6A6),
                     fontSize = 10.sp, fontWeight = if (chosen) FontWeight.Bold else FontWeight.Normal)
             }
         }
@@ -74,7 +74,6 @@ fun DashboardView(db: StoreDb, products: List<Product>, sales: List<Sale>,
         set(java.util.Calendar.MILLISECOND, 0)
     }.timeInMillis }
     val daily = remember(sales) { db.stats(start) }
-    val active = sales.count { it.status != "Served" }
     val low = products.count { it.active && it.trackStock && it.stock <= 5 }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -90,7 +89,6 @@ fun DashboardView(db: StoreDb, products: List<Product>, sales: List<Sale>,
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     StatCard("Today's sales", peso(daily.revenueCents), "Stored locally", "↗", Modifier.weight(1f))
                     StatCard("Orders", daily.orders.toString(), "Today", "☕", Modifier.weight(1f))
-                    StatCard("Barista queue", active.toString(), "Open orders", "▤", Modifier.weight(1f))
                     StatCard("Low stock", low.toString(), "Items to review", "!", Modifier.weight(1f))
                 }
             } else Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -99,7 +97,6 @@ fun DashboardView(db: StoreDb, products: List<Product>, sales: List<Sale>,
                     StatCard("Orders", daily.orders.toString(), "Today", "☕", Modifier.weight(1f))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatCard("Barista queue", active.toString(), "Open orders", "▤", Modifier.weight(1f))
                     StatCard("Low stock", low.toString(), "Items to review", "!", Modifier.weight(1f))
                 }
             }
@@ -107,18 +104,18 @@ fun DashboardView(db: StoreDb, products: List<Product>, sales: List<Sale>,
         Surface(color = Espresso, shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Made for the morning rush.", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-                Text("Beautifully simple checkout with a customer receipt and barista slip on one printer.",
+                Text("Every checkout saves locally and automatically prints customer + preparation slips on one paired printer.",
                     color = Color(0xFFE2CABC), fontSize = 13.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onSell) { Text("Open cashier →") }
-                    OutlinedButton(onClick = onOrders) { Text("Barista queue", color = Color.White) }
+                    OutlinedButton(onClick = onOrders) { Text("Sales history", color = Color.White) }
                 }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text("Recent orders", color = Espresso, fontWeight = FontWeight.Bold, fontSize = 19.sp)
-                Text(db.pendingSyncCount().toString() + " sale(s) queued locally · Upload not enabled yet", color = Muted, fontSize = 11.sp)
+                Text(db.pendingSyncCount().toString() + " sale(s) awaiting cloud sync · Connect in Cloud to upload", color = Muted, fontSize = 11.sp)
             }
             TextButton(onClick = onMenu) { Text("Manage menu →") }
         }
