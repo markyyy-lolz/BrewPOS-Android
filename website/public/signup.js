@@ -27,8 +27,19 @@ async function post(path, payload, token=null) {
     method:"POST",cache:"no-store",headers,body:JSON.stringify(payload)
   });
   let obj={};try{obj=await r.json()}catch{}
-  if(!r.ok)throw Error(r.status===429?"Too many requests. Try later.":
-    "Could not complete this step. Check the email code, connectivity, and BrewPOS Auth setup.");
+  if(!r.ok){
+    if(r.status===429)throw Error("Too many requests. Wait a moment before trying again.");
+    if(path.includes("/auth/v1/verify"))
+      throw Error("Verification code was rejected or expired. Request a new email OTP.");
+    if(path.includes("/functions/v1/brewpos-sync")){
+      if(r.status===400)throw Error("Check the business name and Android Device ID, then retry approval.");
+      if(r.status===401)throw Error("Verified login expired. Restart registration and request a fresh OTP.");
+      if(r.status===409)throw Error("This registration is already linked or has been approved. Contact Azurate support.");
+      if(r.status===503)throw Error("BrewPOS registration service is temporarily unavailable. Retry approval shortly.");
+      throw Error("BrewPOS approval request could not be saved (HTTP "+r.status+"). Please retry.");
+    }
+    throw Error("Email authentication request failed. Check your email address and try again.");
+  }
   return obj;
 }
 function setStage(next) {
