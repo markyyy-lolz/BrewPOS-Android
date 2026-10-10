@@ -47,6 +47,24 @@ app.MapPost("/v1/catalog/refresh",async(HttpContext ctx,HubDb db,HubSettings hub
         return Results.BadRequest(new{error=ex.Message});
     }
 });
+app.MapPost("/v1/cloud/register",async(HttpContext ctx,HubDb db,HubSettings hub,StaffRefreshRequest request)=>{
+    if(!Has(ctx,"admin"))return Results.Forbid();
+    try {
+        await BrewSalesCloud.Register(hub,db.InstallationId,request.StaffAccessToken);
+        return Results.Ok(new{registered=true,installationId=db.InstallationId});
+    }catch(Exception ex)when(ex is UnauthorizedAccessException or HttpRequestException or InvalidOperationException){
+        return Results.BadRequest(new{error=ex.Message});
+    }
+});
+app.MapPost("/v1/cloud/sync-paid",async(HttpContext ctx,HubDb db,HubSettings hub,StaffRefreshRequest request)=>{
+    if(!Has(ctx,"admin","cashier"))return Results.Forbid();
+    try{
+        var result=await BrewSalesCloud.SyncPaid(hub,db,request.StaffAccessToken);
+        return Results.Ok(result);
+    }catch(Exception ex)when(ex is UnauthorizedAccessException or HttpRequestException or InvalidOperationException){
+        return Results.BadRequest(new{error=ex.Message});
+    }
+});
 app.MapPost("/v1/orders",async(HttpContext ctx,HubDb db,KioskOrder request)=>{
     if(!Has(ctx,"kiosk","cashier","admin"))return Results.Forbid();
     try {var result=db.Place(request);return Results.Ok(result);}
@@ -123,6 +141,8 @@ sealed class HubDb {
              created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
            CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,
              order_id TEXT NOT NULL,from_status TEXT,to_status TEXT NOT NULL,role TEXT NOT NULL,at TEXT NOT NULL);
+           CREATE TABLE IF NOT EXISTS hub_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+           CREATE TABLE IF NOT EXISTS cloud_acks(order_id TEXT PRIMARY KEY,ack_at TEXT NOT NULL);
            """;
         cmd.ExecuteNonQuery();
     }
@@ -132,6 +152,37 @@ sealed class HubDb {
         db.Open();using var cmd=db.CreateCommand();
         cmd.CommandText="PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;";
         cmd.ExecuteNonQuery();return db;
+    }
+    public Guid InstallationId {
+        get {
+            lock(_gate){
+              using var db=Open();using var cmd=db.CreateCommand();
+              cmd.CommandText="SELECT value FROM hub_meta WHERE key='installation_id'";
+              if(Guid.TryParse(cmd.ExecuteScalar()?.ToString(),out var value))return value;
+              value=Guid.NewGuid();
+              using var insert=db.CreateCommand();
+              insert.CommandText="INSERT INTO hub_meta(key,value) VALUES('installation_id',$v)";
+              insert.Parameters.AddWithValue("$v",value.ToString());insert.ExecuteNonQuery();
+              return value;
+            }
+        }
+    }
+    public List<KioskOrder> PendingPaidForCloud() {
+        using var db=Open();using var cmd=db.CreateCommand();
+        cmd.CommandText="SELECT body,status,created_at FROM orders WHERE status IN ('Paid','Preparing','Ready','Completed') "+
+            "AND id NOT IN (SELECT order_id FROM cloud_acks) ORDER BY created_at ASC LIMIT 100";
+        using var rows=cmd.ExecuteReader();var list=new List<KioskOrder>();
+        while(rows.Read()){
+            var row=JsonSerializer.Deserialize<KioskOrder>(rows.GetString(0),Options.Web)!;
+            list.Add(row with { Status=rows.GetString(1),CreatedAt=rows.GetString(2) });
+        }
+        return list;
+    }
+    public void CloudAcknowledged(Guid orderId) {
+        using var db=Open();using var cmd=db.CreateCommand();
+        cmd.CommandText="INSERT OR IGNORE INTO cloud_acks(order_id,ack_at) VALUES($id,$now)";
+        cmd.Parameters.AddWithValue("$id",orderId.ToString());
+        cmd.Parameters.AddWithValue("$now",DateTimeOffset.UtcNow.ToString("O"));cmd.ExecuteNonQuery();
     }
     public List<KioskProduct> Menu(){
         using var db=Open();using var c=db.CreateCommand();c.CommandText="SELECT body FROM catalog ORDER BY id";
