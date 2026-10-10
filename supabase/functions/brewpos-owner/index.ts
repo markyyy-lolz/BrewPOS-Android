@@ -131,6 +131,21 @@ async function provisionCustomer(input: Record<string,unknown>, userId: string) 
     throw Error("This activation is already assigned to an account");
   if((await rows("brew_customer_accounts?select=id&email=eq."+encodeURIComponent(email))).length)
     throw Error("Email already has a BrewPOS customer account; use Change License");
+  // A customer-created Auth account is strictly pending: it cannot choose
+  // plan, organization or role. Approval binds it to this real, issued BP1.
+  const requests=await rows("brew_signup_requests?select=user_id,email,business_name,android_device_id,status&email=eq."+
+      encodeURIComponent(email));
+  if(requests.length>1)throw Error("Conflicting signup requests");
+  const signup=requests[0];
+  if(signup){
+    if(signup.status!=="pending")throw Error("Customer signup is not pending");
+    if(String(signup.business_name).trim().toLowerCase()!==
+       String(issue.customer_name).trim().toLowerCase())
+      throw Error("Signed license customer name differs from registered business");
+    if(String(signup.android_device_id)!==String(issue.android_device_id))
+      throw Error("Signed license is for another Android device");
+    if(!uuid(signup.user_id))throw Error("Invalid customer account identity");
+  }
   // Dedicated merchant tenant, NEVER use the shared demo organization.
   // Stable slug lets an administrator safely find partial onboarding work.
   const slug="brew-license-"+String(issue.id);
@@ -144,17 +159,34 @@ async function provisionCustomer(input: Record<string,unknown>, userId: string) 
     organization_id:orgId,name:"Main Branch",timezone:"Asia/Manila"
   })];
   const branchId=String(branches[0].id);
-  // Supabase Auth Admin creates a passwordless user only. The client proves
-  // email ownership via OTP inside BrewPOS Android; no public signup is allowed.
-  const createUser=await fetch(base+"/auth/v1/admin/users",{
-    method:"POST",headers:{"apikey":serviceKey,"authorization":"Bearer "+serviceKey,
-      "content-type":"application/json"},
-    body:JSON.stringify({email,email_confirm:false})
-  });
-  if(!createUser.ok)throw Error("Could not create Auth user; check whether email already exists. No merchant membership was granted.");
-  const invited=await createUser.json();
-  if(!uuid(invited?.id))throw Error("Auth creation did not provide a valid user ID");
-  const invitedUser=String(invited.id);
+  let invitedUser: string;
+  if(signup){
+    // Confirm existing customer-created identity at Auth Admin, never accept
+    // an email or user UUID merely asserted by the public Android device.
+    const admin=await fetch(base+"/auth/v1/admin/users/"+String(signup.user_id),{
+      headers:{"apikey":serviceKey,"authorization":"Bearer "+serviceKey},
+      cache:"no-store"
+    });
+    if(!admin.ok)throw Error("Could not verify registered Auth identity");
+    const verified=await admin.json();
+    const authUser=verified?.user ?? verified;
+    if(authUser?.id!==signup.user_id || !authUser.email_confirmed_at ||
+       String(authUser.email||"").trim().toLowerCase()!==email)
+      throw Error("Customer must verify signup email before approval");
+    invitedUser=String(signup.user_id);
+  } else {
+    // Existing owner-directed onboarding: create a passwordless user who
+    // must prove email ownership with an OTP before registering a tablet.
+    const createUser=await fetch(base+"/auth/v1/admin/users",{
+      method:"POST",headers:{"apikey":serviceKey,"authorization":"Bearer "+serviceKey,
+        "content-type":"application/json"},
+      body:JSON.stringify({email,email_confirm:false})
+    });
+    if(!createUser.ok)throw Error("Could not create Auth user. If customer registered, approve their pending signup.");
+    const invited=await createUser.json();
+    if(!uuid(invited?.id))throw Error("Auth creation did not provide a valid user ID");
+    invitedUser=String(invited.id);
+  }
   // If a retry happens after partial onboarding, avoid duplicate memberships.
   const existing=await rows("brew_memberships?select=id&user_id=eq."+invitedUser+"&organization_id=eq."+orgId);
   if(!existing.length)await insertOne("brew_memberships",{
@@ -165,6 +197,14 @@ async function provisionCustomer(input: Record<string,unknown>, userId: string) 
     license_issue_id:issue.id,plan:issue.plan,expires_at:issue.expires_at,
     status:"invited",created_by:userId
   });
+  if(signup){
+    const review=await api("brew_signup_requests?user_id=eq."+invitedUser,{
+      method:"PATCH",headers:{"prefer":"return=minimal"},
+      body:JSON.stringify({status:"approved",reviewed_at:new Date().toISOString(),
+        updated_at:new Date().toISOString()})
+    });
+    if(!review.ok)throw Error("Account created but signup approval needs administrator review");
+  }
   return {created:true,id:account.id,email,plan:issue.plan,
     organization_id:orgId,branch_id:branchId,
     notice:"Account created. Customer signs in from BrewPOS Android using an email OTP, then registers the tablet."};
@@ -194,6 +234,9 @@ async function changeCustomerLicense(input: Record<string,unknown>) {
 }
 
 async function route(action: string, input: Record<string,unknown>, userId: string) {
+  if(action==="signup_requests"){
+    return {requests:await rows("brew_signup_requests?select=user_id,email,business_name,android_device_id,status,requested_at&order=requested_at.desc&limit=100")};
+  }
   if (action === "accounts") {
     return {accounts:await rows("brew_customer_accounts?select=id,email,organization_id,branch_id,license_issue_id,plan,expires_at,status,created_at&order=created_at.desc&limit=100")};
   }
