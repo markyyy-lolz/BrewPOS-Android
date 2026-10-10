@@ -391,9 +391,11 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 "Cloud" -> CloudScreen(context, db)
                 "Kiosk" -> KioskOrdersView(onPrint = { order ->
                     thermalPrint(order.asSale(),"both",linesOverride=order.lines)
-                }, onPaid = { order, first ->
+                }, onPaid = { order, first, tender ->
+                    val tenderedOrder=order.copy(tenderedCents=tender.toLong(),
+                        changeCents=tender.toLong()-order.totalCents)
                     if(first && autoPrintBoth)
-                        thermalPrint(order.asSale(),"both",automatic=true,linesOverride=order.lines)
+                        thermalPrint(tenderedOrder.asSale(),"both",automatic=true,linesOverride=order.lines)
                     else alert(if(first)"Kiosk payment saved. Print preparation slips from this screen."
                         else "Already paid. Avoid printing duplicate slips.")
                 })
@@ -945,7 +947,7 @@ private fun PrinterChoice(
 @Composable
 private fun KioskOrdersView(
     onPrint:(BrewCloud.IncomingKioskOrder)->Unit,
-    onPaid:(BrewCloud.IncomingKioskOrder,Boolean)->Unit
+    onPaid:(BrewCloud.IncomingKioskOrder,Boolean,Int)->Unit
 ) {
     val context=LocalContext.current
     val scope=rememberCoroutineScope()
@@ -999,7 +1001,7 @@ private fun KioskOrdersView(
                                         scope.launch {
                                             runCatching { BrewCloud.acceptKioskCash(context,o.id,tender) }
                                                 .onSuccess { first ->
-                                                    onPaid(o.copy(status="paid"),first)
+                                                    onPaid(o.copy(status="paid"),first,tender)
                                                     selection=null;cashInput=""
                                                 }
                                                 .onFailure {status=it.message?:"Cash settlement failed"}

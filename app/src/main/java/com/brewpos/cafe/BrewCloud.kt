@@ -183,11 +183,12 @@ object BrewCloud {
     }
     data class IncomingKioskOrder(
         val id:String, val number:String, val service:String, val payment:String,
-        val status:String, val totalCents:Long, val createdAt:Long, val lines:List<SaleLine>
+        val status:String, val totalCents:Long, val tenderedCents:Long, val changeCents:Long,
+        val createdAt:Long, val lines:List<SaleLine>
     ) {
         fun asSale(): Sale = Sale(0L,number,createdAt,service,
             if(payment=="qrph") "QRPH" else "Cash",totalCents.toInt(),0,totalCents.toInt(),
-            totalCents.toInt(),0,"Self-ordering kiosk",if(status=="paid")"Ready" else "Queued")
+            tenderedCents.toInt(),changeCents.toInt(),"Self-ordering kiosk",if(status=="paid")"Ready" else "Queued")
     }
     suspend fun kioskOrders(ctx:Context):List<IncomingKioskOrder> = withContext(Dispatchers.IO) {
         lock.withLock {
@@ -214,7 +215,9 @@ object BrewCloud {
                     }.getOrDefault(System.currentTimeMillis())
                     add(IncomingKioskOrder(o.getString("id"),"K-"+o.getLong("order_number"),
                         o.getString("service_type"),o.getString("payment_choice"),
-                        o.getString("payment_status"),o.getLong("total_centavos"),time,lines))
+                        o.getString("payment_status"),o.getLong("total_centavos"),
+                        o.optLong("tendered_centavos",o.getLong("total_centavos")),
+                        o.optLong("change_centavos",0),time,lines))
                 }
             }
         }

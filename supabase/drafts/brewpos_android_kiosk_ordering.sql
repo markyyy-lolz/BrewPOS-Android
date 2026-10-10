@@ -31,6 +31,8 @@ create table if not exists public.brew_kiosk_orders (
   provider_intent_id text unique,
   provider_qr_image text,
   sale_id uuid,
+  tendered_centavos bigint,
+  change_centavos bigint,
   paid_at timestamptz,
   created_at timestamptz not null default now(),
   unique(kiosk_device_id,submission_id),
@@ -205,7 +207,8 @@ begin
   values(v_order.organization_id,v_sale_id,v_payment,v_order.total_centavos,
     p_tendered,v_change,case when p_source='verified_qrph' then 'gateway_verified' else 'manual' end);
   update public.brew_kiosk_orders
-    set payment_status='paid',paid_at=now(),sale_id=v_sale_id,provider_qr_image=null
+    set payment_status='paid',paid_at=now(),sale_id=v_sale_id,
+        tendered_centavos=p_tendered,change_centavos=v_change,provider_qr_image=null
     where id=v_order.id;
   return jsonb_build_object('accepted',true,'duplicate',false,'order_id',v_order.id,'sale_id',v_sale_id);
 end $$;
