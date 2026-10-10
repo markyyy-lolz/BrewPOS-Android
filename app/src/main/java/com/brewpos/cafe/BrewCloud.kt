@@ -75,7 +75,7 @@ object BrewCloud {
         prefs(ctx).contains("org_id") && prefs(ctx).contains("branch_id")
     fun signOut(ctx:Context) {
         // Keeps local transactions and pending events intact for later reassignment by an owner.
-        prefs(ctx).edit().remove("encrypted_tokens").remove("org_id").remove("branch_id").apply()
+        prefs(ctx).edit().remove("encrypted_tokens").apply()
     }
     private fun request(url:String, data:JSONObject,token:String?=null):JSONObject {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -110,6 +110,15 @@ object BrewCloud {
     suspend fun login(ctx:Context,email:String,password:String):Unit = withContext(Dispatchers.IO) {
         val res=request(authPath("password"),JSONObject().put("email",email.trim()).put("password",password))
         store(ctx,parseTokens(res))
+        val database=StoreDb(ctx.applicationContext)
+        database.binding()?.let { bound ->
+            try {
+                val members=request(syncPath(),JSONObject().put("action","whoami"),validToken(ctx)).getJSONArray("memberships")
+                val member=(0 until members.length()).map {members.getJSONObject(it)}
+                    .singleOrNull {it.getString("organization_id")==bound.first} ?: error("Account has no access to this tablet's café")
+                database.bind(bound.first,bound.second,member.getString("role"))
+            } catch(e:Exception) { signOut(ctx);throw e }
+        }
     }
     private fun validToken(ctx:Context):String {
         val saved=loaded(ctx) ?: throw IOException("Sign into BrewPOS Cloud first")
@@ -125,32 +134,49 @@ object BrewCloud {
     fun installationId(ctx:Context):String = StoreDb(ctx.applicationContext).installationId()
     suspend fun registerDevice(ctx:Context,organizationId:String,branchId:String):Unit = withContext(Dispatchers.IO) {
         lock.withLock {
+            val database=StoreDb(ctx.applicationContext)
+            val previous=database.binding()
+            require(previous==null || (previous.first==organizationId && previous.second==branchId)) { "Installation already linked to another branch" }
+            require(previous!=null || database.pendingSyncCount()==0) { "Unlinked historical sales need owner reconciliation first" }
+            val memberships=request(syncPath(),JSONObject().put("action","whoami"),validToken(ctx)).getJSONArray("memberships")
+            val member=(0 until memberships.length()).map {memberships.getJSONObject(it)}
+                .singleOrNull {it.getString("organization_id")==organizationId} ?: error("No active membership")
             val body=JSONObject().put("action","register")
                 .put("organization_id",organizationId).put("branch_id",branchId)
                 .put("installation_id",installationId(ctx)).put("display_name","BrewPOS Android")
             val response=request(syncPath(),body,validToken(ctx))
             if(!response.optBoolean("registered"))throw IOException("Cloud device registration not confirmed")
+            database.bind(organizationId,branchId,member.getString("role"))
             prefs(ctx).edit().putString("org_id",organizationId).putString("branch_id",branchId).apply()
         }
         schedule(ctx)
     }
     suspend fun uploadPending(ctx:Context):Int = withContext(Dispatchers.IO) {
         lock.withLock {
-            val org=prefs(ctx).getString("org_id",null) ?: return@withLock 0
-            val branch=prefs(ctx).getString("branch_id",null) ?: return@withLock 0
             val database=StoreDb(ctx.applicationContext)
+            val bound=database.binding() ?: throw IOException("Register this tablet to securely bind its branch first")
+            val org=bound.first
+            val branch=bound.second
             var uploaded=0
             // Recheck the token for each batch (it can expire while offline).
             for((id,json) in database.pendingSyncBatch(40)) {
                 val payload=JSONObject(json)
+                require(payload.optString("organization_id")==org && payload.optString("branch_id")==branch && payload.optInt("payload_version")==2) {
+                    "Legacy/unbound sale needs owner reconciliation; it will not be reassigned automatically"
+                }
                 val requestBody=JSONObject().put("action","sync")
                     .put("organization_id",org).put("branch_id",branch)
                     .put("installation_id",database.installationId())
                     .put("event",payload)
                 val ack=request(syncPath(),requestBody,validToken(ctx))
-                if(ack.optBoolean("accepted") && ack.optString("event_id")==id) {
+                if(ack.optBoolean("accepted") && ack.optString("event_id")==id && ack.optBoolean("inventory_applied")) {
                     if(database.acknowledgeSyncedEvent(id))uploaded++
                 } else throw IOException("Sale acknowledgement was not verified")
+            }
+            if(database.pendingSyncCount()==0) {
+                val catalog=request(syncPath(),JSONObject().put("action","catalog")
+                    .put("organization_id",org).put("branch_id",branch).put("installation_id",database.installationId()),validToken(ctx))
+                database.replaceCatalog(org,branch,catalog.getJSONArray("products"))
             }
             uploaded
         }

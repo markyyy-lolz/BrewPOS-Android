@@ -159,7 +159,7 @@ public partial class MainWindow:Window {
         if(_tenant==null)throw new InvalidOperationException("Sign in first.");
         if(_db.HasOutstanding(_tenant))
             throw new InvalidOperationException("Unsynced local tickets/stock block menu replacement.");
-        var data=await _cloud.DownloadMenu(_tenant);
+        var data=await _cloud.DownloadMenu(_tenant,_db.InstallId);
         _db.ReplaceMenu(_tenant,data);
         _online=true;RefreshLocal();
         Status($"Downloaded {data.Count} café menu products.");
@@ -283,7 +283,7 @@ public partial class MainWindow:Window {
                 throw new InvalidOperationException("Enter a stock delta, e.g. +10.");
             _db.QueueStockAdjustment(_tenant!,_cloud.Session!.UserId,p.Id,delta,ReasonInput.Text);
             RefreshLocal();
-            Status("Offline stock change queued. BrewPOS Cloud inventory reconciliation not yet enabled.");
+            Status("Stock change saved locally and queued for cloud reconciliation.");
         }catch(Exception ex){Warn(ex.Message);}
     }
     async Task SyncNow() {
@@ -291,10 +291,6 @@ public partial class MainWindow:Window {
         try {
             var records=_db.Outbox(_tenant);
             foreach(var entry in records.Where(x=>x.Status=="queued")) {
-                if(entry.Kind!="sale.completed"){
-                    Status("Inventory event waiting for manager review; cloud inventory route pending.");
-                    break;
-                }
                 try{
                     await _cloud.ReplaySale(_tenant,_db.InstallId,entry);
                     _db.MarkSynced(entry.Id);_online=true;
@@ -304,6 +300,8 @@ public partial class MainWindow:Window {
                     _online=false;Status("No internet. Pending café sales are safe in SQLite.");break;
                 }catch(TaskCanceledException){
                     _online=false;Status("Cloud timeout; will retry original sale ID.");break;
+                }catch(BrewCloudException ex) when(ex.Code is 401 or 403) {
+                    _online=false;Status("Sign in with an authorized account to resume pending sync.");break;
                 }catch(Exception ex){
                     // Never discard original locally paid cash; manager must resolve.
                     _db.Review(entry.Id,ex.Message);
@@ -311,8 +309,11 @@ public partial class MainWindow:Window {
                     break;
                 }
             }
-            RefreshLocal();
+            Save(); // Persist rotated refresh tokens after successful requests.
+            if(!_db.HasOutstanding(_tenant))await RefreshMenu();
+            else RefreshLocal();
         }catch(Exception ex){
+            Save();
             _online=false;Status("Offline sync deferred: "+ex.Message);
         }finally{_syncLock.Release();}
     }

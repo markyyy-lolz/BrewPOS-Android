@@ -72,7 +72,10 @@ public sealed class CafeStore {
         BP1License.Valid(LicenseCode,Device16,now,LastSeen,out message);
 
     public List<MenuItem> Menu(Tenant tenant) {
-        using var db=Open();using var c=db.CreateCommand();
+        using var db=Open();return ReadMenu(db,null,tenant);
+    }
+    static List<MenuItem> ReadMenu(SqliteConnection db,SqliteTransaction? tx,Tenant tenant) {
+        using var c=db.CreateCommand();c.Transaction=tx;
         c.CommandText="SELECT payload FROM menu WHERE org_id=$o AND branch_id=$b ORDER BY id";
         c.Parameters.AddWithValue("$o",tenant.OrganizationId.ToString());
         c.Parameters.AddWithValue("$b",tenant.BranchId.ToString());
@@ -82,8 +85,17 @@ public sealed class CafeStore {
     }
     public bool HasOutstanding(Tenant tenant)=>Outbox(tenant).Any(x=>x.Status is "queued" or "review");
     public void ReplaceMenu(Tenant tenant,IReadOnlyList<MenuItem> catalog) {
+        if(catalog.Any(p=>p.OrganizationId!=tenant.OrganizationId||p.BranchId!=tenant.BranchId)||catalog.Select(p=>p.Id).Distinct().Count()!=catalog.Count)
+            throw new InvalidOperationException("Invalid tenant catalog.");
         if(HasOutstanding(tenant))throw new InvalidOperationException("Pending sales/inventory must reconcile before replacing local menu.");
         using var db=Open();using var tx=db.BeginTransaction();
+        using(var pending=db.CreateCommand()) {
+            pending.Transaction=tx;
+            pending.CommandText="SELECT COUNT(*) FROM outbox WHERE org_id=$o AND branch_id=$b AND status IN ('queued','review')";
+            pending.Parameters.AddWithValue("$o",tenant.OrganizationId.ToString());
+            pending.Parameters.AddWithValue("$b",tenant.BranchId.ToString());
+            if(Convert.ToInt64(pending.ExecuteScalar())>0)throw new InvalidOperationException("Local events appeared during catalog download; retry sync.");
+        }
         Exec(db,tx,"DELETE FROM menu WHERE org_id=$o AND branch_id=$b",("$o",tenant.OrganizationId.ToString()),("$b",tenant.BranchId.ToString()));
         foreach(var p in catalog)SaveMenu(db,tx,p);
         tx.Commit();
@@ -113,9 +125,10 @@ public sealed class CafeStore {
         var receipt=TicketPrinter.Receipt("Café Oabi",sale);
         var body=JsonSerializer.Serialize(sale.CloudEvent(),Config.Json);
         using var db=Open();using var tx=db.BeginTransaction();
+        var trustedMenu=ReadMenu(db,tx,tenant);
         var productLines=lines.GroupBy(x=>x.ProductId);
         foreach(var g in productLines) {
-            var product=Menu(tenant).SingleOrDefault(x=>x.Id==g.Key)
+            var product=trustedMenu.SingleOrDefault(x=>x.Id==g.Key)
                 ??throw new InvalidOperationException("Product missing from trusted menu.");
             if(!product.Active)throw new InvalidOperationException("Product unavailable.");
             var count=g.Sum(x=>x.Quantity);
@@ -138,14 +151,16 @@ public sealed class CafeStore {
         if(tenant.Role is not ("owner" or "manager"))throw new InvalidOperationException("Manager permission needed.");
         if(!Authorized(DateTimeOffset.UtcNow,out var status))throw new InvalidOperationException("Activation needed: "+status);
         if(delta==0||Math.Abs(delta)>100000)throw new InvalidOperationException("Invalid stock movement.");
-        var p=Menu(tenant).SingleOrDefault(p=>p.Id==productId)
+        using var db=Open();using var tx=db.BeginTransaction();
+        var p=ReadMenu(db,tx,tenant).SingleOrDefault(p=>p.Id==productId)
             ??throw new InvalidOperationException("Unknown product.");
+        if(!p.TrackStock||string.IsNullOrWhiteSpace(reason)||reason.Trim().Length is <3 or >240)
+            throw new InvalidOperationException("Tracked product and a reason of 3–240 characters required.");
         if(p.Stock+delta<0)throw new InvalidOperationException("Local stock cannot be negative.");
         var id=Guid.NewGuid();var date=DateTimeOffset.UtcNow;
-        var payload=JsonSerializer.Serialize(new{event_type="stock.adjusted",event_id=id,
+        var payload=JsonSerializer.Serialize(new{payload_version=2,event_type="stock.adjusted",event_id=id,
             installation_id=InstallId,product_id=productId,expected_product_version=p.Version,
             delta,reason,created_at_ms=date.ToUnixTimeMilliseconds()},Config.Json);
-        using var db=Open();using var tx=db.BeginTransaction();
         SaveMenu(db,tx,p with {Stock=p.Stock+delta});
         Exec(db,tx,"""
           INSERT INTO outbox(id,org_id,branch_id,actor_id,event_type,payload,receipt,status,created_at)

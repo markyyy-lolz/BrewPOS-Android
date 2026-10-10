@@ -722,6 +722,7 @@ private fun ProductEditor(product: Product?, onClose: () -> Unit, onSave: (Produ
             Button(onClick = {
                 onSave(Product(id = product?.id ?: 0L, name = name.trim(), category = category,
                     priceCents = priceCents ?: 0, stock = stockCount ?: 0,
+                    cloudId = product?.cloudId, cloudVersion = product?.cloudVersion ?: 0,
                     trackStock = trackStock, active = true, icon = icon.ifBlank { "☕" }.take(4)))
             }, enabled = name.isNotBlank() && priceCents != null && stockCount != null && stockCount >= 0) { Text("Save") }
         }, dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } })

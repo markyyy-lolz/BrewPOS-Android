@@ -88,18 +88,11 @@ public sealed class BrewCloud {
         if(!result.GetProperty("registered").GetBoolean())
             throw new InvalidOperationException("BrewPOS Cloud did not confirm device registration.");
     }
-    public async Task<List<MenuItem>> DownloadMenu(Tenant tenant) {
-        await EnsureFresh();
-        var url=$"rest/v1/brew_products?select=id,organization_id,branch_id,name,category,price_centavos,stock_quantity,track_stock,active,version&organization_id=eq.{tenant.OrganizationId}&branch_id=eq.{tenant.BranchId}&order=category.asc,name.asc";
-        using var req=new HttpRequestMessage(HttpMethod.Get,url);
-        req.Headers.TryAddWithoutValidation("apikey",Config.PublicKey);
-        req.Headers.TryAddWithoutValidation("authorization","Bearer "+Session!.Access);
-        using var response=await _http.SendAsync(req);
-        if(!response.IsSuccessStatusCode)throw new BrewCloudException((int)response.StatusCode,"Café Oabi product catalogue not authorized or unavailable.");
-        var json=await response.Content.ReadAsStringAsync();
-        using var doc=JsonDocument.Parse(json);
+    public async Task<List<MenuItem>> DownloadMenu(Tenant tenant,Guid installation) {
+        var catalog=await SyncAction(new {action="catalog",organization_id=tenant.OrganizationId,
+            branch_id=tenant.BranchId,installation_id=installation});
         var products=new List<MenuItem>();
-        foreach(var p in doc.RootElement.EnumerateArray()) {
+        foreach(var p in catalog.GetProperty("products").EnumerateArray()) {
             var org=p.GetProperty("organization_id").GetGuid();var branch=p.GetProperty("branch_id").GetGuid();
             if(org!=tenant.OrganizationId||branch!=tenant.BranchId)
                 throw new InvalidOperationException("Cross-tenant product response rejected.");
@@ -116,7 +109,7 @@ public sealed class BrewCloud {
         return products;
     }
     public async Task ReplaySale(Tenant tenant,Guid installation,SyncEntry row) {
-        if(row.Kind!="sale.completed")
+        if(row.Kind is not ("sale.completed" or "stock.adjusted"))
             throw new InvalidOperationException("Inventory/event sync is not yet supported by the current BrewPOS endpoint.");
         using var d=JsonDocument.Parse(row.Payload);
         var result=await SyncAction(new{
@@ -124,7 +117,8 @@ public sealed class BrewCloud {
             installation_id=installation,@event=d.RootElement.Clone()
         });
         if(!result.GetProperty("accepted").GetBoolean() ||
-            result.GetProperty("event_id").GetGuid()!=row.Id)
+            result.GetProperty("event_id").GetGuid()!=row.Id ||
+            !result.TryGetProperty("inventory_applied",out var applied)||!applied.GetBoolean())
             throw new InvalidOperationException("BrewPOS Cloud did not acknowledge this sale. Keep pending.");
     }
 }

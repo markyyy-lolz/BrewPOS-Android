@@ -23,7 +23,7 @@ public sealed record SaleEvent(Guid EventId,Guid InstallationId,string ReceiptNo
     long SubtotalCents,long DiscountCents,long TotalCents,long TenderedCents,long ChangeCents,
     DateTimeOffset CreatedAt,List<TicketLine> Lines) {
     public object CloudEvent()=>new {
-        payload_version=1,event_type="sale.completed",event_id=EventId,client_sale_id=EventId,
+        payload_version=2,event_type="sale.completed",event_id=EventId,client_sale_id=EventId,
         installation_id=InstallationId,local_receipt_no=ReceiptNo,
         created_offline_at_ms=CreatedAt.ToUnixTimeMilliseconds(),
         service_type=Service,payment_method="Cash",
@@ -31,7 +31,7 @@ public sealed record SaleEvent(Guid EventId,Guid InstallationId,string ReceiptNo
         total_centavos=TotalCents,tendered_centavos=TenderedCents,change_centavos=ChangeCents,
         notes=Notes,
         line_items=Lines.Select((line,index)=>new {
-            line_no=index+1,local_product_id=line.ProductId.ToString(),product_name=line.Name,
+            line_no=index+1,product_id=line.ProductId,local_product_id=line.ProductId.ToString(),product_name=line.Name,
             options=line.Options,quantity=line.Quantity,unit_centavos=line.UnitCents,line_centavos=line.TotalCents
         }).ToArray()
     };

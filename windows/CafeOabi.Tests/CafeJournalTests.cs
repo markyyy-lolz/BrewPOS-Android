@@ -58,4 +58,19 @@ public class CafeJournalTests {
         var stranger=new Tenant(Guid.NewGuid(),Guid.NewGuid(),"Other café","owner");
         Assert.Empty(db.Menu(stranger));
     }
+    [Fact]
+    public void ForeignCatalogCannotReplaceTrustedMenu() {
+        var(db,tenant,p)=Create();
+        Assert.Throws<InvalidOperationException>(()=>db.ReplaceMenu(tenant,new[]{p with{OrganizationId=Guid.NewGuid()}}));
+        Assert.Equal(p,db.Menu(tenant).Single());
+    }
+    [Fact]
+    public void SaleCarriesCloudProductIdentityAndInventoryProtocol() {
+        var product=Guid.NewGuid();
+        var sale=new SaleEvent(Guid.NewGuid(),Guid.NewGuid(),"TEST-RECEIPT","Takeout","",10000,0,10000,10000,0,
+            DateTimeOffset.UtcNow,new List<TicketLine>{new(product,"Latte","",1,10000)});
+        using var doc=JsonDocument.Parse(JsonSerializer.Serialize(sale.CloudEvent(),Config.Json));
+        Assert.Equal(2,doc.RootElement.GetProperty("payload_version").GetInt32());
+        Assert.Equal(product,doc.RootElement.GetProperty("line_items")[0].GetProperty("product_id").GetGuid());
+    }
 }
