@@ -25,7 +25,7 @@ async function rows(path:string) {
   const r=await service(path);if(!r.ok)throw new Error("Database query unavailable");
   return await r.json() as Record<string,unknown>[];
 }
-async function authenticatedUser(req:Request):Promise<string|null> {
+async function authenticatedUser(req:Request):Promise<{id:string,email:string}|null> {
   const auth=req.headers.get("authorization")||"";
   const token=auth.match(/^Bearer ([A-Za-z0-9_\-.]+)$/i)?.[1];
   if (!token)return null;
@@ -34,14 +34,18 @@ async function authenticatedUser(req:Request):Promise<string|null> {
   }});
   if(!r.ok)return null;
   const user=await r.json();
-  return uuid(user?.id)?user.id:null;
+  // Registration and sync both require a Supabase-verified email, not just a token.
+  return uuid(user?.id) && user?.email_confirmed_at &&
+    typeof user.email==="string" && user.email.includes("@")
+    ? {id:user.id,email:user.email.trim().toLowerCase()} : null;
 }
 Deno.serve(async(req)=>{
   if(req.method==="OPTIONS")return new Response(null,{status:204,headers:common});
   if(req.method!=="POST")return answer(405,{error:"POST required"});
   if(!base||!secret)return answer(503,{error:"Cloud service not configured"});
-  const userId=await authenticatedUser(req).catch(()=>null);
-  if(!userId)return answer(401,{error:"Sign in with a confirmed BrewPOS staff account"});
+  const identity=await authenticatedUser(req).catch(()=>null);
+  if(!identity)return answer(401,{error:"Sign in with a verified BrewPOS email account"});
+  const userId=identity.id;
   const length=Number(req.headers.get("content-length")||"0");
   if(length>160000)return answer(413,{error:"Payload too large"});
   let data:any;
@@ -50,6 +54,30 @@ Deno.serve(async(req)=>{
   if(!data || typeof data!=="object")return answer(400,{error:"Invalid request"});
   try {
     const membership=await rows(`brew_memberships?select=organization_id,role&user_id=eq.${userId}&is_active=eq.true`);
+    if(data.action==="request_account"){
+      if(membership.length)return answer(409,{error:"This user already belongs to a registered BrewPOS business"});
+      const business=String(data.business_name||"").trim();
+      const device=String(data.android_device_id||"").trim().toLowerCase();
+      if(business.length<2||business.length>80||/[|\\u0000-\\u001f\\u007f]/.test(business))
+        return answer(400,{error:"Business name must contain 2 to 80 printable characters"});
+      if(!/^[0-9a-f]{16}$/.test(device))
+        return answer(400,{error:"Android device ID must contain 16 lowercase hex characters"});
+      const previous=await rows("brew_signup_requests?select=status&user_id=eq."+userId);
+      if(previous.length && previous[0].status==="approved")
+        return answer(409,{error:"Account was already approved. Refresh your branch list"});
+      const write=await service("brew_signup_requests?on_conflict=user_id",{
+        method:"POST",
+        headers:{"prefer":"resolution=merge-duplicates,return=representation"},
+        body:JSON.stringify({
+          user_id:userId,email:identity.email,business_name:business,
+          android_device_id:device,status:"pending",
+          updated_at:new Date().toISOString()
+        })
+      });
+      if(!write.ok)return answer(503,{error:"Could not save account request. Please retry later."});
+      return answer(200,{requested:true,status:"pending",
+        message:"Email verified. Waiting for Azurate to approve a signed BP1 license and assign your cloud branch."});
+    }
     if(data.action==="whoami"){
       // Only return the current user's authorized branch list.
       const authorized=[];
@@ -57,7 +85,9 @@ Deno.serve(async(req)=>{
         const branch=await rows(`brew_branches?select=id,name,organization_id&organization_id=eq.${m.organization_id}&is_active=eq.true`);
         authorized.push({organization_id:m.organization_id,role:m.role,branches:branch});
       }
-      return answer(200,{memberships:authorized});
+      const requests=await rows("brew_signup_requests?select=status,business_name,requested_at&user_id=eq."+userId);
+      return answer(200,{memberships:authorized,
+        account_request:requests.length ? requests[0] : null});
     }
     if(!uuid(data.organization_id)||!uuid(data.branch_id)||!uuid(data.installation_id))
       return answer(400,{error:"Invalid branch or device identity"});
