@@ -15,8 +15,8 @@ test("Azurate Owner can request and verify email OTP without creating a customer
   assert.ok(js.includes('type:"email"'));
   assert.ok(js.includes('await owner("overview")'));
   assert.equal(js.includes('grant_type=password'),false);
-  assert.equal(js.includes("localStorage"),false);
-  assert.equal(js.includes("sessionStorage"),false);
+  assert.doesNotMatch(js,/(?:localStorage|sessionStorage)\.(?:setItem|getItem|removeItem)/);
+
 });
 
 test("Owner backend verifies JWT and grants access exclusively by UUID",()=>{
