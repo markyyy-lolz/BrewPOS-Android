@@ -77,6 +77,9 @@ private fun PairingScreen(onPaired:()->Unit) {
     var branches by remember { mutableStateOf<List<KioskBranch>>(emptyList()) }
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var emailCodeMode by remember { mutableStateOf(true) }
+    var emailSent by remember { mutableStateOf(false) }
+    var emailCode by remember { mutableStateOf("") }
     BoxWithConstraints(Modifier.fillMaxSize().background(Canvas)) {
         val wide=maxWidth>=720.dp
         @Composable fun BrandHero(modifier:Modifier) {
@@ -103,23 +106,64 @@ private fun PairingScreen(onPaired:()->Unit) {
                             color=Bean,fontSize=13.sp,lineHeight=19.sp)
                         HorizontalDivider(color=Soft)
                         if(branches.isEmpty()){
-                            OutlinedTextField(email,{email=it},label={Text("Manager email")},
-                                singleLine=true,shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth())
-                            OutlinedTextField(password,{password=it},label={Text("Password")},
-                                visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                                singleLine=true,shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth())
-                            Button(enabled=!busy&&email.isNotBlank()&&password.isNotBlank(),onClick={
-                                busy=true
-                                scope.launch {
-                                    runCatching{KioskCloud.availableBranches(email,password)}
-                                        .onSuccess{branches=it;password="";status=if(it.isEmpty())"No authorized branch available."else"Choose your café branch."}
-                                        .onFailure{status=it.message?:"Could not verify manager"}
-                                    busy=false
+                            OutlinedTextField(email,{email=it;emailSent=false},
+                                label={Text("Manager email")},singleLine=true,
+                                shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth())
+                            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                                FilterChip(selected=emailCodeMode,onClick={emailCodeMode=true},
+                                    label={Text("Email code")})
+                                FilterChip(selected=!emailCodeMode,onClick={emailCodeMode=false},
+                                    label={Text("Password")})
+                            }
+                            if(emailCodeMode) {
+                                if(emailSent) OutlinedTextField(emailCode,{emailCode=it.filter{c->c.isDigit()}.take(8)},
+                                    label={Text("Verification code")},singleLine=true,
+                                    shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth())
+                                Button(enabled=!busy&&email.isNotBlank()&&(!emailSent||emailCode.length>=6),
+                                    onClick={
+                                        busy=true
+                                        scope.launch {
+                                            if(!emailSent){
+                                                runCatching{KioskCloud.sendManagerEmailCode(email)}
+                                                    .onSuccess{emailSent=true;status="Check the manager email for a verification code."}
+                                                    .onFailure{status=it.message?:"Email code request failed"}
+                                            } else {
+                                                runCatching{KioskCloud.branchesByEmailCode(email,emailCode)}
+                                                    .onSuccess{branches=it;emailCode="";status=if(it.isEmpty())"No authorized manager branch found."else"Choose your café branch."}
+                                                    .onFailure{status=it.message?:"Verification failed"}
+                                            }
+                                            busy=false
+                                        }
+                                    },modifier=Modifier.fillMaxWidth().heightIn(min=55.dp),
+                                    shape=RoundedCornerShape(16.dp),
+                                    colors=ButtonDefaults.buttonColors(containerColor=Caramel)){
+                                    Text(if(busy)"Please wait…"else if(emailSent)"Verify email code →"else"Send email code →",
+                                        fontWeight=FontWeight.Bold)
                                 }
-                            },modifier=Modifier.fillMaxWidth().heightIn(min=55.dp),
-                                shape=RoundedCornerShape(16.dp),
-                                colors=ButtonDefaults.buttonColors(containerColor=Caramel)) {
-                                Text(if(busy)"Verifying…"else"Verify & select branch →",fontWeight=FontWeight.Bold)
+                                if(emailSent)TextButton(onClick={
+                                    emailSent=false;emailCode="";status=""
+                                }){Text("Request a new code")}
+                            } else {
+                                OutlinedTextField(password,{password=it},
+                                    label={Text("Password")},
+                                    visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                    singleLine=true,shape=RoundedCornerShape(14.dp),
+                                    modifier=Modifier.fillMaxWidth())
+                                Button(enabled=!busy&&email.isNotBlank()&&password.isNotBlank(),
+                                    onClick={
+                                        busy=true
+                                        scope.launch {
+                                            runCatching{KioskCloud.availableBranches(email,password)}
+                                                .onSuccess{branches=it;password="";status=if(it.isEmpty())"No authorized branch available."else"Choose your café branch."}
+                                                .onFailure{status=it.message?:"Could not verify manager"}
+                                            busy=false
+                                        }
+                                    },modifier=Modifier.fillMaxWidth().heightIn(min=55.dp),
+                                    shape=RoundedCornerShape(16.dp),
+                                    colors=ButtonDefaults.buttonColors(containerColor=Caramel)) {
+                                    Text(if(busy)"Verifying…"else"Verify & select branch →",
+                                        fontWeight=FontWeight.Bold)
+                                }
                             }
                         } else {
                             Text("Choose a branch",fontWeight=FontWeight.Bold,color=Moss)
