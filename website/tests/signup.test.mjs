@@ -53,7 +53,7 @@ test("Mobile signup sends email code and submits registration without a device f
   nodes.otp.value="123456";
   await events["signupForm:submit"]({preventDefault(){}});
   assert.equal(nodes.submit.disabled,true);
-  assert.match(nodes.feedback.textContent,/Registration submitted/);
+  assert.match(nodes.feedback.textContent,/request submitted/);
   assert.equal(calls.length,3);
   assert.equal(calls[2].body.action,"request_account");
   assert.equal(calls[2].body.business_name,"Punong Tulay");
