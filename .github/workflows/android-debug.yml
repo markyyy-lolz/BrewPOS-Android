@@ -65,7 +65,7 @@ jobs:
         if: success() && github.ref == 'refs/heads/feature/android-premium-ui-refresh' && github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v2.1.0-android-dual-access-preview.1
+          RELEASE_TAG: v2.1.1-kiosk-catalog-preview.1
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -83,6 +83,9 @@ jobs:
           - Cashier: café sidebar, adaptive landscape dual-pane checkout, polished catalog, quantity controls and branded cart.
           - Kiosk: premium manager pairing, welcome screen, dine-in/takeout selector, menu category chips, product cards and cart flow.
           
+          - **Self-order kiosk:** Fixed Android system status bar overlap; friendly empty-menu state; automatically refreshes cloud catalog while waiting for the café menu.
+          - **Menu management:** Azurate Owner Dashboard now includes branch-scoped real menu product creation/editing. Enter actual café items and prices; no sample menu is seeded.
+
           **Technical preview, not production checkout certification.** Kiosk backend tables and authenticated Edge API are active, but pairing and ordering require an approved café organization, branch, device registration and real menu. QR Ph payment processing is not live. Cloud accounts require internet to authorize checkout; offline license mode remains the supported offline sales workflow. Android cashier offline SQLite ordering and branch inventory logic are inherited from existing development work. Real product photos require approved image assets and menu image metadata; cards currently use category illustrations. Do not claim live payment verification, cloud kiosk operation or physical printer acceptance.
           
           DEBUG-SIGNED TEST APKs ONLY. Install on a non-production tablet. Back up existing cashier local receipts and stock records before installation; do not clear app data. For the black Overlay #1 bar seen in screenshots, disable Android Developer Options > Simulate secondary displays > None.
@@ -91,7 +94,7 @@ jobs:
           NOTES
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --prerelease \
-              --title "BrewPOS Android v2.1 — Cloud Login + Offline License Preview" \
+              --title "BrewPOS Android v2.1.1 — Kiosk Menu Refresh & Display Fix" \
               --notes-file /tmp/brewpos-premium-notes.md
           fi
           gh release upload "$RELEASE_TAG" dist/BrewPOS-Android-Cashier-PremiumUI-DEV.apk \
