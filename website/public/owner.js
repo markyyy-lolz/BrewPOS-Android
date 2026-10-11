@@ -18,13 +18,35 @@ function setSignedIn(yes) {
   el("app").hidden=!yes;
   if(!yes) {el("generatedCode").value="";el("codeResult").hidden=true;el("noCode").hidden=false;}
 }
-async function login(email,password) {
-  const response = await fetch(CLOUD+"/auth/v1/token?grant_type=password",{
-    method:"POST",cache:"no-store",headers:{"content-type":"application/json","apikey":PUBLISHABLE_KEY},
-    body:JSON.stringify({email,password})
+async function requestOwnerOtp(email) {
+  const normalized=String(email).trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized))
+    throw Error("Enter a valid owner email address.");
+  const response=await fetch(CLOUD+"/auth/v1/otp",{
+    method:"POST",cache:"no-store",
+    headers:{"content-type":"application/json","apikey":PUBLISHABLE_KEY},
+    body:JSON.stringify({email:normalized,create_user:true})
   });
-  if(!response.ok)throw Error("Incorrect credentials or unconfirmed email.");
-  const body = await response.json();
+  if(!response.ok) {
+    if(response.status===429)throw Error("Email OTP rate limit reached. Please wait before requesting another code.");
+    if(response.status===422)throw Error("Supabase email signup is disabled. Enable Email signups or contact your Supabase administrator.");
+    throw Error("Could not send email OTP. Check SMTP and Auth settings, then try again.");
+  }
+  // Public Auth signup is not admin registration: the server grants access ONLY
+  // after an existing private invitation and verified email bind to an Auth UUID.
+}
+async function login(email,code) {
+  const normalized=String(email).trim().toLowerCase();
+  const token=String(code).trim();
+  // Preserve the exact generated numeric token; do not truncate an 8-digit code.
+  if(!/^[0-9]{6,8}$/.test(token))throw Error("Enter the full numeric email code.");
+  const response=await fetch(CLOUD+"/auth/v1/verify",{
+    method:"POST",cache:"no-store",
+    headers:{"content-type":"application/json","apikey":PUBLISHABLE_KEY},
+    body:JSON.stringify({email:normalized,token,type:"email"})
+  });
+  if(!response.ok)throw Error("Email verification code expired or invalid. Request a fresh code.");
+  const body=await response.json();
   if(!body.access_token)throw Error("Supabase did not return a valid session.");
   jwt=body.access_token;
   expiresAt=Date.now()+Math.max(60,Number(body.expires_in)||3600)*1000;
@@ -61,6 +83,9 @@ function switchTab(tab) {
     overview:["Overview","Your workspace","Live data from your dedicated BrewPOS Supabase project."],
     activation:["Activation generator","Generate a license","Signed activation codes bound to one Android Device ID."],
     licenses:["Issued licenses","Issuance history","Audit log of generated activations (no plaintext codes stored)."],
+    approvals:["Client approvals","Approve Cloud POS clients","Authorize verified accounts without device-bound offline licenses."],
+    menu:["Menu catalog","Manage café products","Create and manage products for approved Cloud POS café branches."],
+    accounts:["Client accounts","Customer onboarding","Cloud account status, optional BP1 onboarding and plan management."],
     devices:["Devices","Registered tablets","Cloud device registrations and their last reported activity."],
     sales:["Cloud sales","Synchronized transactions","Read-only sales received by BrewPOS Cloud."]
   };
@@ -90,6 +115,177 @@ function setCells(bodyId,rows,keys,empty) {
     target.append(tr);
   }
 }
+function fillOptions(id,items,valueOf,labelOf,placeholder) {
+  const select=el(id), current=select.value;
+  select.replaceChildren();
+  const first=document.createElement("option");
+  first.value=""; first.textContent=placeholder; select.append(first);
+  for(const item of items) {
+    const option=document.createElement("option");
+    option.value=String(valueOf(item)); option.textContent=String(labelOf(item));
+    select.append(option);
+  }
+  if(items.some(x=>String(valueOf(x))===current))select.value=current;
+}
+
+function cloudAction(label,handler){
+  const b=document.createElement("button");
+  b.type="button";b.className="outline";b.textContent=label;
+  b.addEventListener("click",async()=>{
+    b.disabled=true;
+    try{const done=await handler();if(done!==false)await loadTab();}
+    catch(e){status(e.message||"Cloud approval failed","error")}
+    finally{b.disabled=false}
+  });
+  return b;
+}
+async function renderCloudApprovals(){
+  const response=await owner("signup_requests");
+  const pending=(response.requests||[]).filter(r=>r.status==="pending");
+  el("pendingCount").textContent=String(pending.length);
+  const body=el("approvalRows");body.replaceChildren();
+  if(!pending.length){
+    setCells("approvalRows",[],[()=>"",()=>"",()=>"",()=>"",()=>"",()=>""],
+      "No pending email-verified registrations.");
+    return;
+  }
+  for(const entry of pending){
+    const tr=document.createElement("tr");
+    for(const value of [entry.business_name,entry.email,entry.android_device_id,date(entry.requested_at)]){
+      const td=document.createElement("td");td.textContent=String(value??"—");tr.append(td);
+    }
+    const plan=document.createElement("select");
+    plan.setAttribute("aria-label","Select Cloud POS plan for "+entry.email);
+    for(const [value,label] of [["TRIAL","Trial · 7 days"],["MONTHLY","Monthly · 30 days"],["LIFETIME","Lifetime"]]){
+      const option=document.createElement("option");option.value=value;option.textContent=label;plan.append(option);
+    }
+    const planTd=document.createElement("td");planTd.append(plan);tr.append(planTd);
+    const actions=document.createElement("td");actions.className="review-actions";
+    actions.append(cloudAction("✓ Approve",async()=>{
+      if(!confirm("Approve "+entry.email+" for "+plan.value+" Cloud POS?"))return false;
+      const r=await owner("approve_cloud_signup",{user_id:entry.user_id,plan:plan.value});
+      status("Approved "+r.email+" for Cloud POS. Client may sign in with an email code.","success");
+      return true;
+    }),cloudAction("Reject",async()=>{
+      if(!confirm("Reject "+entry.email+"?"))return false;
+      await owner("reject_cloud_signup",{user_id:entry.user_id});
+      status("Registration rejected.","success");
+      return true;
+    }));
+    tr.append(actions);body.append(tr);
+  }
+}
+function renderCloudStatusButtons(accounts){
+  const body=el("accountRows");
+  [...body.querySelectorAll("tr")].forEach((tr,index)=>{
+    const row=accounts[index];
+    if(!row)return;
+    const td=document.createElement("td");
+    if(row.status==="active"||row.status==="suspended")
+      td.append(cloudAction(row.status==="active"?"Suspend":"Reactivate",async()=>{
+        const next=row.status==="active"?"suspended":"active";
+        if(!confirm("Set "+row.email+" to "+next+"?"))return false;
+        await owner("set_cloud_account_status",{account_id:row.id,status:next});
+        status("Updated Cloud account to "+next+".","success");return true;
+      }));
+    tr.append(td);
+  });
+}
+
+
+let catalogBranches=[],catalogProducts=[];
+const catalogPair=()=>{
+ const raw=el("catalogBranch").value;
+ const [organization_id,branch_id]=raw.split("|");
+ return catalogBranches.find(b=>b.organization_id===organization_id&&b.id===branch_id)
+   ? {organization_id,branch_id} : null;
+};
+function priceCentavos(){
+ const input=el("catalogPrice").value.trim();
+ if(!/^[0-9]{1,7}(?:\.[0-9]{1,2})?$/.test(input))
+   throw Error("Enter a valid Philippine peso price, e.g. 120.00");
+ const [whole,decimal=""]=input.split(".");
+ const centavos=Number(whole)*100+Number(decimal.padEnd(2,"0"));
+ if(!Number.isSafeInteger(centavos)||centavos<1||centavos>100000000)
+   throw Error("Product price must be between ₱0.01 and ₱1,000,000");
+ return centavos;
+}
+function catalogStockInputs(){
+ const tracked=el("catalogTrackStock").checked,editing=Boolean(el("catalogProductId").value);
+ el("catalogStockWrap").hidden=!tracked||editing;
+ el("catalogActiveWrap").hidden=!editing;
+}
+function resetCatalogForm(){
+ el("catalogProductForm").reset();
+ el("catalogProductId").value="";el("catalogVersion").value="";
+ el("catalogFormTitle").textContent="Add a product";
+ el("catalogSave").textContent="＋ Save menu product";
+ catalogStockInputs();
+}
+function menuCell(tr,value){
+ const td=document.createElement("td");
+ td.textContent=String(value??"—");tr.append(td);return td;
+}
+function renderCatalog(){
+ const body=el("catalogRows");body.replaceChildren();
+ const selected=catalogPair();
+ const products=selected ? catalogProducts.filter(p=>p.organization_id===selected.organization_id
+   &&p.branch_id===selected.branch_id) : [];
+ el("catalogCount").textContent=products.length+" total products · "+products.filter(x=>x.active).length+" shown";
+ if(!selected||!products.length){
+   const tr=document.createElement("tr");
+   const td=menuCell(tr,selected?"No products yet. Add the first real menu item using the form.":"Select an approved café branch.");
+   td.colSpan=5;td.className="table-empty";body.append(tr);return;
+ }
+ for(const p of products){
+   const tr=document.createElement("tr");
+   menuCell(tr,p.name);menuCell(tr,p.category);
+   menuCell(tr,php(p.price_centavos));
+   menuCell(tr,!p.active?"Hidden":p.track_stock?
+     (Number(p.stock_quantity)>0?"Stock: "+p.stock_quantity:"Sold out"):"Made to order");
+   const actions=document.createElement("td");
+   const edit=document.createElement("button");edit.type="button";edit.className="outline";
+   edit.textContent="Edit";
+   edit.addEventListener("click",()=>{
+     el("catalogProductId").value=p.id;
+     el("catalogVersion").value=String(p.version);
+     el("catalogName").value=p.name;
+     el("catalogCategory").value=p.category;
+     el("catalogPrice").value=(Number(p.price_centavos)/100).toFixed(2);
+     el("catalogTrackStock").checked=p.track_stock===true;
+     el("catalogActive").checked=p.active===true;
+     el("catalogFormTitle").textContent="Edit product";
+     el("catalogSave").textContent="Save product changes";
+     catalogStockInputs();
+     el("catalogProductForm").scrollIntoView({behavior:"smooth",block:"start"});
+   });
+   actions.append(edit);tr.append(actions);body.append(tr);
+ }
+}
+async function loadCatalog(){
+ const previous=el("catalogBranch").value;
+ const data=await owner("catalog_list");
+ catalogBranches=data.branches||[];
+ catalogProducts=data.products||[];
+ const selector=el("catalogBranch");
+ selector.replaceChildren();
+ const placeholder=document.createElement("option");
+ placeholder.value="";placeholder.textContent="Select an approved café branch";
+ selector.append(placeholder);
+ for(const branch of catalogBranches){
+   const option=document.createElement("option");
+   option.value=branch.organization_id+"|"+branch.id;
+   option.textContent=branch.organization_name+" / "+branch.name;
+   selector.append(option);
+ }
+ if(catalogBranches.some(b=>b.organization_id+"|"+b.id===previous))selector.value=previous;
+ else if(catalogBranches.length===1)selector.value=catalogBranches[0].organization_id+"|"+catalogBranches[0].id;
+ el("catalogInfo").textContent=catalogBranches.length?
+   "Live BrewPOS Cloud · Products added here are limited to the selected approved café branch.":
+   "No approved active café branch. Approve a verified cloud account under Client Approvals first.";
+ renderCatalog();
+}
+
 async function loadTab() {
   if(busy)return;
   busy=true;
@@ -104,12 +300,44 @@ async function loadTab() {
       el("activeDeviceCount").textContent=String(d.active_devices??0)+" active devices";
       el("licenseCount").textContent=String(d.issued_licenses??0);
       el("orgCount").textContent=String(d.organization_count??0);
+      const approvals=await owner("signup_requests");
+      el("pendingCount").textContent=String((approvals.requests||[]).filter(r=>r.status==="pending").length);
+    } else if(currentTab==="approvals"){
+      await renderCloudApprovals();
+    } else if(currentTab==="menu"){
+      await loadCatalog();
     } else if(currentTab==="licenses") {
       const data=await owner("licenses");
       setCells("licensesRows",data.licenses||[],[
         x=>x.customer_name,x=>x.android_device_id,x=>x.plan,
         x=>date(x.expires_at),x=>date(x.issued_at)
       ],"No activation codes have been issued yet.");
+    } else if(currentTab==="accounts") {
+      const [licenses,customers,signups]=await Promise.all([
+        owner("licenses"), owner("accounts"), owner("signup_requests")
+      ]);
+      const registrationList=signups.requests||[];
+      setCells("signupRows",registrationList,[
+        x=>x.email,x=>x.business_name,x=>x.android_device_id,
+        x=>x.status,x=>date(x.requested_at)
+      ],"No OTP-verified registration requests yet.");
+      fillOptions("signupSelection",registrationList.filter(x=>x.status==="pending"),
+        x=>x.email,x=>x.business_name+" — "+x.email+" — "+x.android_device_id,
+        "Select an email-verified registration");
+      const issues=licenses.licenses||[], accounts=customers.accounts||[];
+      setCells("accountRows",accounts,[
+        x=>x.email,x=>x.plan,x=>date(x.expires_at),x=>x.status,x=>date(x.created_at)
+      ],"No client cloud accounts yet. Cloud-only accounts can be approved without signed offline keys.");
+      renderCloudStatusButtons(accounts);
+      const activeIssues=issues.filter(x=>!x.expires_at||new Date(x.expires_at).getTime()>Date.now());
+      const used=new Set(accounts.map(x=>x.license_issue_id));
+      fillOptions("accountIssue",activeIssues.filter(x=>!used.has(x.id)),
+        x=>x.id,x=>x.customer_name+" — "+x.plan+" — "+x.android_device_id,
+        "Select issued BP1 activation");
+      fillOptions("accountToEdit",accounts,x=>x.id,x=>x.email+" — "+x.plan,"Select account");
+      fillOptions("accountReplacementIssue",activeIssues.filter(x=>!used.has(x.id)),
+        x=>x.id,x=>x.customer_name+" — "+x.plan+" — "+x.android_device_id,
+        "Select replacement activation");
     } else if(currentTab==="devices") {
       const data=await owner("devices");
       setCells("devicesRows",data.devices||[],[
@@ -133,16 +361,30 @@ async function loadTab() {
     throw e;
   } finally{busy=false;el("refresh").disabled=false;}
 }
+el("sendLoginOtp").addEventListener("click",async()=>{
+  loginError("");
+  const button=el("sendLoginOtp");
+  const email=String(new FormData(el("loginForm")).get("email")||"");
+  button.disabled=true;
+  try{
+    await requestOwnerOtp(email);
+    loginError("Email code requested. Check your inbox and spam folder.");
+  }catch(e){loginError(e.message||"Could not request email code.");}
+  finally{button.disabled=false;}
+});
 el("loginForm").addEventListener("submit",async event=>{
  event.preventDefault();loginError("");
+ // currentTarget is only available while dispatching the event. Capture the
+ // form before any await so successful owner OTP login cannot throw on reset().
+ const form = event.currentTarget;
  const button=el("loginButton");button.disabled=true;
- const data=new FormData(event.currentTarget);
+ const data=new FormData(form);
  try{
-   await login(String(data.get("email")||""),String(data.get("password")||""));
-   // Owner permission is checked on the backend before showing the console.
+   await login(String(data.get("email")||""),String(data.get("code")||""));
+   // The server must authorize the verified Auth user ID before any owner data is displayed.
    await owner("overview");
    setSignedIn(true);
-   event.currentTarget.reset();
+   form.reset();
    switchTab("overview");
  }catch(e){
    clearSession();
@@ -151,6 +393,49 @@ el("loginForm").addEventListener("submit",async event=>{
 });
 for(const b of document.querySelectorAll("[data-tab]"))b.addEventListener("click",()=>switchTab(b.dataset.tab));
 el("goActivation").addEventListener("click",()=>switchTab("activation"));
+el("catalogBranch").addEventListener("change",()=>{resetCatalogForm();renderCatalog()});
+el("catalogTrackStock").addEventListener("change",catalogStockInputs);
+el("catalogReset").addEventListener("click",resetCatalogForm);
+el("catalogRefresh").addEventListener("click",async()=>{
+ try{await loadCatalog();status("Café menu loaded from BrewPOS Cloud.","success");}
+ catch(e){status(e.message||"Unable to refresh café catalog","error")}
+});
+el("catalogProductForm").addEventListener("submit",async(event)=>{
+ event.preventDefault();
+ const button=el("catalogSave");
+ button.disabled=true;
+ try{
+   const tenant=catalogPair();
+   if(!tenant)throw Error("Select an approved café branch before saving.");
+   const product_id=el("catalogProductId").value;
+   const item={
+     ...tenant,
+     name:el("catalogName").value.trim(),
+     category:el("catalogCategory").value.trim(),
+     price_centavos:priceCentavos(),
+     track_stock:el("catalogTrackStock").checked,
+   };
+   if(product_id){
+     const original=catalogProducts.find(p=>p.id===product_id&&
+       p.organization_id===tenant.organization_id&&p.branch_id===tenant.branch_id);
+     if(!original)throw Error("Product is no longer in this café branch. Refresh and retry.");
+     await owner("catalog_update",{
+       ...item,product_id,
+       active:el("catalogActive").checked,
+       version:Number(el("catalogVersion").value)
+     });
+     status("Product updated. Refresh the kiosk menu to show changes.","success");
+   }else{
+     item.stock_quantity=item.track_stock?el("catalogStock").value.trim():"0";
+     await owner("catalog_create",item);
+     status("Product added to the correct café branch. Kiosk can now refresh its menu.","success");
+   }
+   await loadCatalog();
+   resetCatalogForm();
+ }catch(e){status(e.message||"Could not save product","error")}
+ finally{button.disabled=false}
+});
+
 el("refresh").addEventListener("click",()=>loadTab().catch(e=>status(e.message,"error")));
 el("signOut").addEventListener("click",()=>{clearSession();loginError("Signed out.");});
 el("issueForm").addEventListener("submit",async event=>{
@@ -175,5 +460,36 @@ el("copyCode").addEventListener("click",async()=>{
  if(!code)return;
  try{await navigator.clipboard.writeText(code);status("Activation code copied. Share it securely.","success");}
  catch {el("generatedCode").select();status("Select and manually copy the highlighted activation code.","info");}
+});
+el("signupSelection").addEventListener("change",()=>{
+  const email=el("signupSelection").value;
+  el("accountEmail").value=email;
+  if(email)status("Signup selected. Issue a matching BP1 token for this customer's business and device before approving.","info");
+});
+el("accountCreateForm").addEventListener("submit",async event=>{
+  event.preventDefault();status("");
+  const button=el("accountCreateButton");button.disabled=true;
+  try {
+    const email=el("accountEmail").value.trim();
+    const license_issue_id=el("accountIssue").value;
+    if(!email||!license_issue_id)throw Error("Choose an email and issued license.");
+    const result=await owner("provision_customer",{email,license_issue_id});
+    el("accountCreateForm").reset();
+    status("Client account created for "+result.email+". Tell them to open BrewPOS Android → Cloud and request an email sign-in code.","success");
+    await loadTab();
+  } catch(e) {status(e.message||"Client invitation failed","error");}
+  finally {button.disabled=false;}
+});
+el("accountPlanForm").addEventListener("submit",async event=>{
+  event.preventDefault();status("");
+  const button=el("accountUpdateButton");button.disabled=true;
+  try {
+    const account_id=el("accountToEdit").value,license_issue_id=el("accountReplacementIssue").value;
+    if(!account_id||!license_issue_id)throw Error("Choose the customer and new purchased license.");
+    const result=await owner("change_customer_license",{account_id,license_issue_id});
+    status("Account "+result.email+" now uses "+result.plan+". Send the new signed BP1 code to their tablet.","success");
+    await loadTab();
+  } catch(e) {status(e.message||"Plan update failed","error");}
+  finally {button.disabled=false;}
 });
 setSignedIn(false);

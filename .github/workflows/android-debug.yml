@@ -2,7 +2,7 @@ name: Android Debug APK
 
 on:
   push:
-    branches: [main, feature/android-kiosk-qrph-multiprinter]
+    branches: [main, feature/android-kiosk-qrph-multiprinter, feature/android-premium-ui-refresh]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -60,6 +60,53 @@ jobs:
           path: kiosk/build/outputs/apk/debug/kiosk-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish premium Android UI DEVELOPMENT preview
+        if: success() && github.ref == 'refs/heads/feature/android-premium-ui-refresh' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v2.2.0-kiosk-reference-design-preview.1
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/BrewPOS-Android-Cashier-PremiumUI-DEV.apk
+          cp kiosk/build/outputs/apk/debug/kiosk-debug.apk dist/BrewPOS-Android-Kiosk-PremiumUI-DEV.apk
+          cat > /tmp/brewpos-premium-notes.md <<'NOTES'
+          ## BrewPOS v2.2 — Photo-based Self Order Kiosk (Android development preview)
+          
+          ## New kiosk interface
+          - Rebuilt customer home to closely follow the approved BrewPOS visual reference.
+          - Large coffee photo hero, premium dine-in/takeout cards, live category chips and photo-based menu product cards.
+          - Always-visible order summary, Pay at Cashier, and server-gated QR Ph TEST (never silently enabled).
+          - Original manager pairing, product quantities, customization, authenticated checkout and order-number confirmation remain.
+          - Photos are illustrative Unsplash CDN placeholders; names, stock and prices always come from the café's real branch database.
+          - Product catalog must be populated by café owner; no mock products are inserted.
+          
+          Both Android apps retain the existing user and checkout architecture from PR #13:
+          - **Two Android cashier access modes:** Offline POS with genuine BP1 device key, or Cloud POS using approved email account and verified active plan, independent of offline license.
+          - **Cloud authentication:** Password or email verification code. Unapproved café users can request access directly in app; owner reviews in the live website Client Approvals tab.
+          - **Android Settings:** Account mode, pending sync status, local receipts, three printer tests, printer assignment and cloud sync.
+          - **Live owner dashboard:** Approve/reject cloud accounts, assign trial/monthly/lifetime plan, suspend/reactivate, issue offline licenses separately.
+          - **Safety:** Cloud checkout is blocked without recent server confirmation and registered branch. Offline key is still required for disconnected selling.
+          - Cashier: café sidebar, adaptive landscape dual-pane checkout, polished catalog, quantity controls and branded cart.
+          - Kiosk: premium manager pairing, welcome screen, dine-in/takeout selector, menu category chips, product cards and cart flow.
+          
+          - **Self-order kiosk:** Fixed Android system status bar overlap; friendly empty-menu state; automatically refreshes cloud catalog while waiting for the café menu.
+          - **Menu management:** Azurate Owner Dashboard now includes branch-scoped real menu product creation/editing. Enter actual café items and prices; no sample menu is seeded.
+
+          **Technical preview, not production checkout certification.** Kiosk backend tables and authenticated Edge API are active, but pairing and ordering require an approved café organization, branch, device registration and real menu. QR Ph payment processing is not live. Cloud accounts require internet to authorize checkout; offline license mode remains the supported offline sales workflow. Android cashier offline SQLite ordering and branch inventory logic are inherited from existing development work. Real product photos require approved image assets and menu image metadata; cards currently use category illustrations. Do not claim live payment verification, cloud kiosk operation or physical printer acceptance.
+          
+          DEBUG-SIGNED TEST APKs ONLY. Install on a non-production tablet. Back up existing cashier local receipts and stock records before installation; do not clear app data. For the black Overlay #1 bar seen in screenshots, disable Android Developer Options > Simulate secondary displays > None.
+          
+          Owner signing remains in Supabase Vault. Customer plans are verified by the authenticated server, not a local flag. This debug APK trusts the updated public key and older valid BP1 signatures. **Do not wipe Android app data or install over a productive device without backing up offline sales.**\n          \n          Source: feature/android-premium-ui-refresh, PR #13. Details: docs/ANDROID_PREMIUM_UI_REFRESH.md.
+          NOTES
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --prerelease \
+              --title "BrewPOS Android v2.2 — Premium Coffee Kiosk UI Preview" \
+              --notes-file /tmp/brewpos-premium-notes.md
+          fi
+          gh release upload "$RELEASE_TAG" dist/BrewPOS-Android-Cashier-PremiumUI-DEV.apk \
+            dist/BrewPOS-Android-Kiosk-PremiumUI-DEV.apk --clobber
 
       - name: Publish Android cashier + kiosk DEVELOPMENT pre-release
         if: success() && github.ref == 'refs/heads/feature/android-kiosk-qrph-multiprinter' && github.event_name == 'push'

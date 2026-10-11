@@ -10,8 +10,8 @@ android {
         applicationId = "com.azurate.brewpos.kiosk"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-dev"
+        versionCode = 3
+        versionName = "0.3.0-reference-ui-preview"
     }
     buildFeatures { compose = true }
     compileOptions {
@@ -27,4 +27,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // Image loading/cache for generic café visuals; no private keys or menu mock data.
+    implementation("io.coil-kt:coil-compose:2.7.0")
 }

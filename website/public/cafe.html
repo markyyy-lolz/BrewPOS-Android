@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#153c30"><meta name="robots" content="noindex,nofollow">
+<meta name="description" content="BrewPOS Café Portal – your café's sales, menu, kiosk orders and cloud account.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src https://rfxzbuocxersgbshczbj.supabase.co; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
+<title>BrewPOS Café Portal · Your café, beautifully managed</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="cafe.v1.css">
+<script defer src="cafe.v1.js"></script>
+</head><body>
+<a class="skip" href="#mainContent">Skip to dashboard</a>
+<section id="loginScreen" class="login-screen">
+  <div class="login-story">
+    <div class="login-mark"><span class="coffee-mark">☕</span><span>BREWPOS <small>CAFÉ PORTAL</small></span></div>
+    <div class="story-copy"><span class="eyebrow light">A BETTER WAY TO RUN YOUR CAFÉ</span>
+      <h1>Your café.<br>Your corner<br>of the cloud.</h1>
+      <p>Know your numbers, keep your menu fresh and follow every order in one beautiful workspace.</p>
+      <div class="story-badges"><span>✓ Private to your café</span><span>✓ Connected to Android POS</span></div>
+    </div>
+    <div class="story-bottom">BREWPOS · BY AZURATE SOFTWARE SOLUTIONS</div>
+    <div class="story-orb story-orb-a"></div><div class="story-orb story-orb-b"></div>
+  </div>
+  <main class="login-content" id="loginContent">
+    <div class="mobile-brand">☕ BREWPOS <small>CAFÉ PORTAL</small></div>
+    <div class="login-card">
+      <span class="eyebrow"><span class="green-dot"></span> PRIVATE CAFÉ WORKSPACE</span>
+      <h2>Welcome back.</h2>
+      <p class="muted">Sign in using the email address approved for your café's BrewPOS Cloud account.</p>
+      <form id="loginForm" class="form-stack" novalidate>
+        <label for="loginEmail">Account email</label>
+        <input id="loginEmail" type="email" placeholder="owner@yourcafe.ph" autocomplete="email" maxlength="254" required>
+        <button class="btn primary" id="sendCode" type="submit">Send verification code <span>→</span></button>
+      </form>
+      <form id="verifyForm" class="form-stack" hidden novalidate>
+        <p class="code-explain">We sent a one-time verification code to <strong id="sentTo"></strong>.</p>
+        <label for="emailCode">Verification code</label>
+        <input id="emailCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit email code" maxlength="8" required>
+        <button class="btn primary" id="verifyCode" type="submit">Verify & enter my café <span>→</span></button>
+        <button type="button" class="text-btn" id="changeEmail">Use a different email</button>
+      </form>
+      <div id="authStatus" class="message" role="alert" aria-live="polite" hidden></div>
+      <div class="login-help"><span class="shield">✓</span><p>Only approved café owners and managers can access this portal. For a new café account, <a href="signup.html">request BrewPOS Cloud access</a>.</p></div>
+    </div>
+    <div class="login-footer">Need assistance? Contact Azurate Software Solutions.</div>
+  </main>
+</section>
+<div id="workspace" class="workspace" hidden>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="cafe.html" aria-label="BrewPOS Café Portal"><span class="brand-icon">☕</span><span>BREWPOS<small>CAFÉ PORTAL</small></span></a>
+    <div class="location-label">YOUR WORKSPACE</div>
+    <div class="cafe-identity"><span class="cafe-identity-icon">✦</span><div><strong id="sidebarCafe">Your café</strong><small id="sidebarBranch">Your branch</small></div></div>
+    <div class="nav-caption">MANAGE</div>
+    <nav class="nav" aria-label="Café portal navigation">
+      <button data-tab="dashboard" class="active" type="button"><span class="nav-icon">▦</span> Overview</button>
+      <button data-tab="menu" type="button"><span class="nav-icon">☷</span> Menu manager</button>
+      <button data-tab="inventory" type="button"><span class="nav-icon">▤</span> Inventory</button>
+      <button data-tab="kiosk" type="button"><span class="nav-icon">▣</span> Kiosk orders</button>
+      <button data-tab="sales" type="button"><span class="nav-icon">▥</span> Sales history</button>
+      <button data-tab="devices" type="button"><span class="nav-icon">⌘</span> Devices</button>
+      <button data-tab="subscription" type="button"><span class="nav-icon">◇</span> My subscription</button>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <div class="mini-help"><span class="mini-help-icon">✦</span><strong>Made for your daily rush.</strong><p>A clear view of your café—one order at a time.</p></div>
+    <button id="signOut" class="signout" type="button">↪ Sign out</button>
+    <div class="side-credit">AZURATE SOFTWARE SOLUTIONS</div>
+  </aside>
+  <main class="main" id="mainContent">
+    <div class="topbar">
+      <button id="navToggle" class="icon-btn hamburger" type="button" aria-label="Show navigation">☰</button>
+      <div class="breadcrumb">WORKSPACE <span>/</span> <strong id="crumb">Overview</strong></div>
+      <div class="top-actions">
+        <span class="status-pill"><span class="green-dot"></span> CLOUD CONNECTED</span>
+        <button id="refresh" class="icon-btn" title="Refresh café data" type="button" aria-label="Refresh">↻</button>
+        <div class="avatar" title="Signed-in café owner">☕</div>
+      </div>
+    </div>
+    <div class="page-head">
+      <div><div class="eyebrow" id="pageEyebrow">GOOD COFFEE. SMARTER BUSINESS.</div>
+        <h1 id="pageTitle">Your café at a glance.</h1><p id="pageSubtitle">A clearer picture of everything happening at your counter.</p></div>
+      <div class="branch-control"><label for="branchSelect">ACTIVE BRANCH</label><select id="branchSelect" aria-label="Select café branch"></select></div>
+    </div>
+    <div id="toast" class="message global-message" role="alert" aria-live="polite" hidden></div>
+    <section class="view" id="dashboard">
+      <div class="hero-banner">
+        <div><span class="eyebrow light">BREWPOS CLOUD INSIGHTS</span>
+          <h2>Every order adds up.<br>Every detail matters.</h2>
+          <p>Freshly synced numbers from the tablets and kiosk in your café.</p>
+        </div><div class="hero-coffee" aria-hidden="true">☕</div>
+      </div>
+      <div class="stat-grid">
+        <article class="stat"><div class="stat-head">RECENT SYNCED SALES <span>↗</span></div><strong id="statRevenue">₱0.00</strong><p>Last 250 cloud receipts</p></article>
+        <article class="stat"><div class="stat-head">COMPLETED SALES <span>🧾</span></div><strong id="statSales">0</strong><p>Last 250 synced transactions</p></article>
+        <article class="stat"><div class="stat-head">KIOSK ORDERS <span>▣</span></div><strong id="statKiosk">0</strong><p>Last 150 kiosk orders</p></article>
+        <article class="stat"><div class="stat-head">ACTIVE MENU ITEMS <span>☕</span></div><strong id="statProducts">0</strong><p>Visible and available items</p></article>
+      </div>
+      <div class="dashboard-columns">
+        <section class="panel"><div class="panel-heading"><div><h2>Sales, day by day</h2><p>Last 7 calendar days · synced transactions only</p></div><span class="chip">₱ PHP</span></div><div id="salesBars" class="sales-bars" aria-label="Last seven days sales chart"></div></section>
+        <section class="panel"><div class="panel-heading"><div><h2>Quick insights</h2><p>What needs attention at your café</p></div></div>
+          <div id="insights" class="insights"></div>
+          <button type="button" class="btn secondary full" id="goMenu">Manage café menu <span>→</span></button>
+        </section>
+      </div>
+      <section class="panel"><div class="panel-heading"><div><h2>Latest sales</h2><p>Synced Android checkout activity</p></div><button data-go="sales" class="text-btn" type="button">See all →</button></div><div class="table-scroll"><table><thead><tr><th>Receipt</th><th>Date & time</th><th>Payment</th><th>Amount</th></tr></thead><tbody id="latestSales"></tbody></table></div></section>
+    </section>
+    <section class="view" id="menu" hidden>
+      <div class="section-intro"><h2>Curate your café menu.</h2><p>Products saved here are shared with the linked Android POS and paired self-order kiosk.</p></div>
+      <div class="menu-layout">
+        <section class="panel menu-form-panel"><div class="panel-heading"><div><h2 id="menuFormTitle">Add a menu item</h2><p>Use your café's actual prices and products</p></div></div>
+          <form id="productForm" class="form-stack">
+            <input id="productId" type="hidden"><input id="productVersion" type="hidden">
+            <label for="productName">Product name</label><input id="productName" minlength="2" maxlength="80" placeholder="e.g. Iced Café Latte" required>
+            <label for="productCategory">Category</label><input id="productCategory" minlength="2" maxlength="48" placeholder="e.g. Coffee, Non-Coffee, Pastries" value="Coffee" required>
+            <label for="productPrice">Selling price (₱)</label><input id="productPrice" type="text" inputmode="decimal" placeholder="120.00" required>
+            <label class="checkline"><input id="trackStock" type="checkbox"> Track item stock quantity</label>
+            <div id="openingStockWrap" class="field-cluster" hidden><label for="openingStock">Opening stock</label><input id="openingStock" type="number" min="0" step="0.001" value="0"></div>
+            <label class="checkline" id="visibleWrap" hidden><input id="productActive" type="checkbox" checked> Visible in the kiosk menu</label>
+            <button id="saveProduct" type="submit" class="btn primary full">＋ Save menu item</button>
+            <button id="resetProduct" type="button" class="btn secondary full">Cancel editing / New item</button>
+            <p class="fine">Existing stock cannot be silently overwritten here. Record audited adjustments from the Android manager inventory screen.</p>
+          </form>
+        </section>
+        <section class="panel"><div class="panel-heading"><div><h2>Your products</h2><p id="productCount">0 products</p></div><span class="chip">LIVE CATALOG</span></div>
+          <div class="filter-row"><label class="search"><span>⌕</span><input id="productSearch" placeholder="Search products or categories..." aria-label="Search products"></label><select id="categoryFilter" aria-label="Filter category"><option value="All">All categories</option></select></div>
+          <div id="productGrid" class="product-grid"></div>
+        </section>
+      </div>
+    </section>
+    <section class="view" id="inventory" hidden>
+      <div class="section-intro"><h2>Inventory at a glance.</h2><p>Monitor stock and recent movement records for this branch.</p></div>
+      <div class="stat-grid three">
+        <article class="stat"><div class="stat-head">TRACKED PRODUCTS <span>▤</span></div><strong id="stockTracked">0</strong><p>Items with quantity tracking</p></article>
+        <article class="stat"><div class="stat-head">LOW STOCK <span>⚠</span></div><strong id="stockLow">0</strong><p>5 units or fewer</p></article>
+        <article class="stat"><div class="stat-head">SOLD OUT <span>×</span></div><strong id="stockOut">0</strong><p>Zero or negative quantity</p></article>
+      </div>
+      <section class="panel"><div class="panel-heading"><div><h2>Current stock</h2><p>Figures update as cloud events are acknowledged</p></div></div><div class="table-scroll"><table><thead><tr><th>Item</th><th>Category</th><th>Quantity</th><th>Status</th></tr></thead><tbody id="stockRows"></tbody></table></div></section>
+      <section class="panel"><div class="panel-heading"><div><h2>Recent stock movements</h2><p>Audited inventory adjustments and sales deductions</p></div></div><div class="table-scroll"><table><thead><tr><th>Date</th><th>Item</th><th>Change</th><th>Reason</th></tr></thead><tbody id="movementRows"></tbody></table></div></section>
+    </section>
+    <section class="view" id="kiosk" hidden>
+      <div class="section-intro"><h2>Self-order kiosk activity.</h2><p>See incoming orders and their payment verification status—never assume an unpaid order was settled.</p></div>
+      <section class="panel"><div class="panel-heading"><div><h2>Kiosk order queue</h2><p>Last 150 orders · order numbers and actual payment states</p></div><button data-refresh class="btn secondary" type="button">Refresh queue ↻</button></div><div id="kioskCards" class="order-grid"></div></section>
+      <p class="fine">Pay-at-Cashier payments are completed in the authorized cashier app. QR Ph remains unavailable until gateway merchant activation and payment verification are certified.</p>
+    </section>
+    <section class="view" id="sales" hidden>
+      <div class="section-intro"><h2>Your sales, clearly.</h2><p>Review cloud-synced transactions from your Android cashier devices.</p></div>
+      <section class="panel"><div class="panel-heading"><div><h2>Synced receipt history</h2><p>Latest 250 transactions; offline sales appear only after sync</p></div><button type="button" id="exportSales" class="btn secondary">Export CSV ↓</button></div><div class="table-scroll"><table><thead><tr><th>Receipt</th><th>Time</th><th>Service</th><th>Payment</th><th>Status</th><th>Amount</th></tr></thead><tbody id="salesRows"></tbody></table></div></section>
+    </section>
+    <section class="view" id="devices" hidden>
+      <div class="section-intro"><h2>Connected café devices.</h2><p>See the Android cashier tablets and paired self-order kiosks associated with your branch.</p></div>
+      <div class="dashboard-columns">
+        <section class="panel"><div class="panel-heading"><div><h2>Cashier tablets</h2><p>Registered Android POS installations</p></div></div><div id="cashierDevices" class="device-list"></div></section>
+        <section class="panel"><div class="panel-heading"><div><h2>Self-order kiosks</h2><p>Manager-paired kiosk devices</p></div></div><div id="kioskDevices" class="device-list"></div></section>
+      </div>
+      <p class="fine">Device pairing and credential management are performed securely in the Android applications, not in this read-only device list.</p>
+    </section>
+    <section class="view" id="subscription" hidden>
+      <div class="section-intro"><h2>Your BrewPOS plan.</h2><p>Subscription and access information for your approved café.</p></div>
+      <div class="subscription-layout">
+        <section class="plan-panel"><span class="eyebrow light">ACTIVE CLOUD SUBSCRIPTION</span><h2 id="planName">BREWPOS CLOUD</h2><p id="planDetail">Plan information</p><div class="plan-divider"></div><div class="plan-row"><span>Access</span><strong>Owner / Manager portal</strong></div><div class="plan-row"><span>Status</span><strong>Active</strong></div><div class="plan-row"><span>Renewal / expiry</span><strong id="planExpiry">—</strong></div></section>
+        <section class="panel"><h2>Account & security</h2><p>Access is verified securely using your café's approved Supabase account.</p><div class="info-pair"><span>Signed-in email</span><strong id="accountEmail">—</strong></div><div class="info-pair"><span>Your role</span><strong id="accountRole">—</strong></div><div class="info-pair"><span>Café</span><strong id="accountCafe">—</strong></div><div class="info-pair"><span>Active branch</span><strong id="accountBranch">—</strong></div><div class="notice">To renew, change plan or add another café, contact Azurate Software Solutions. No payment data or private signing keys are stored in this site.</div></section>
+      </div>
+    </section>
+    <footer class="page-footer"><span>© BREWPOS BY AZURATE SOFTWARE SOLUTIONS</span><span>Secure café-scoped cloud dashboard · Philippines</span></footer>
+  </main>
+</div>
+</body></html>

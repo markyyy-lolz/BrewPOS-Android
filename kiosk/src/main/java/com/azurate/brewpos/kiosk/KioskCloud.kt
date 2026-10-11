@@ -27,6 +27,8 @@ data class KioskLine(
 )
 data class KioskOrder(val id:String,val number:String,val amount:Long,val status:String,val qrImage:String?)
 object KioskCloud {
+    @Volatile var qrPhTestEnabled:Boolean=false
+        private set
     private const val BASE="https://rfxzbuocxersgbshczbj.supabase.co"
     private const val KEY="sb_publishable_CR-CJKna_rcjQi7gg1CZGQ__DnXI6Lb"
     private fun prefs(ctx:Context)=ctx.getSharedPreferences("brewpos_kiosk_secure",Context.MODE_PRIVATE)
@@ -82,10 +84,28 @@ object KioskCloud {
         } finally {connection.disconnect()}
     }
     private var ownerToken:String?=null // Pairing only; never persisted.
+    suspend fun sendManagerEmailCode(email:String):Unit = withContext(Dispatchers.IO) {
+        val clean=email.trim().lowercase()
+        require(clean.contains("@") && clean.length<=254) { "Enter a valid manager email." }
+        // Existing Auth user only: kiosk cannot create self-registered café managers.
+        post("/auth/v1/otp",
+            JSONObject().put("email",clean).put("create_user",false))
+        Unit
+    }
+    suspend fun branchesByEmailCode(email:String,code:String):List<KioskBranch> = withContext(Dispatchers.IO) {
+        require(code.trim().matches(Regex("[0-9]{6,8}"))) { "Enter the email verification code." }
+        val auth=post("/auth/v1/verify",
+            JSONObject().put("type","email").put("email",email.trim().lowercase())
+                .put("token",code.trim()))
+        availableForToken(auth.getString("access_token"))
+    }
     suspend fun availableBranches(email:String,password:String):List<KioskBranch> = withContext(Dispatchers.IO) {
         val auth=post("/auth/v1/token?grant_type=password",
             JSONObject().put("email",email.trim()).put("password",password))
-        ownerToken=auth.getString("access_token")
+        availableForToken(auth.getString("access_token"))
+    }
+    private fun availableForToken(tokenValue:String):List<KioskBranch> {
+        ownerToken=tokenValue
         val response=post("/functions/v1/brewpos-sync",
             JSONObject().put("action","whoami"),bearer=ownerToken)
         val branches=mutableListOf<KioskBranch>()
@@ -101,7 +121,8 @@ object KioskCloud {
                 branches+=KioskBranch(org,b.getString("id"),"$orgName / ${b.getString("name")}")
             }
         }
-        branches
+        if(branches.isEmpty())ownerToken=null
+        return branches
     }
     suspend fun pair(ctx:Context,branch:KioskBranch) = withContext(Dispatchers.IO) {
         val bearer=ownerToken ?: error("Verify an authorized café manager first.")
@@ -124,6 +145,7 @@ object KioskCloud {
     suspend fun catalog(ctx:Context):List<KioskProduct> = withContext(Dispatchers.IO) {
         val (payload,t)=authenticated(ctx,"catalog")
         val response=post("/functions/v1/brewpos-kiosk",payload,kiosk=t)
+        qrPhTestEnabled=response.optBoolean("qrph_test_enabled",false)
         val rows=response.getJSONArray("products")
         val products=mutableListOf<KioskProduct>()
         for(i in 0 until rows.length()){

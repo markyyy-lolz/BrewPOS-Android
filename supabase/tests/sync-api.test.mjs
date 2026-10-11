@@ -5,12 +5,13 @@ import vm from 'node:vm';
 import ts from 'typescript';
 const source=ts.transpileModule(await readFile(new URL('../functions/brewpos-sync/index.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText;
 const org='10000000-0000-0000-0000-000000000001',branch='20000000-0000-0000-0000-000000000001',install='30000000-0000-0000-0000-000000000001',user='40000000-0000-0000-0000-000000000001',device='50000000-0000-0000-0000-000000000001',id='60000000-0000-0000-0000-000000000001';
-function harness({role='owner',verified=true,registeredBranch=branch,member=true}={}) {
+function harness({role='owner',verified=true,registeredBranch=branch,member=true,accountStatus='active',accountExpiresAt=null}={}) {
  let handler;const calls=[];
  const fetch=async(url,init={})=>{
   calls.push([url,init]);let result;
   if(url.endsWith('/auth/v1/user'))result={id:user,email:'test@example.com',email_confirmed_at:verified?'2026-01-01':null};
   else if(url.includes('brew_memberships?'))result=member?[{organization_id:org,role}]:[];
+  else if(url.includes('brew_customer_accounts?'))result=accountStatus?[{status:accountStatus,expires_at:accountExpiresAt,plan:'TRIAL'}]:[];
   else if(url.includes('brew_organizations?'))result=[{name:'Café Oabi'}];
   else if(url.includes('brew_branches?'))result=[{id:branch}];
   else if(url.includes('brew_devices?'))result=[{id:device,is_active:true,branch_id:registeredBranch}];
@@ -54,4 +55,19 @@ test('existing verified signup request route is preserved',async()=>{
 test('whoami identifies the cafe organization even when the branch is Main Branch',async()=>{
  const h=harness();const r=await h.call({action:'whoami'});
  assert.equal((await r.json()).memberships[0].organization_name,'Café Oabi');
+});
+
+test('Cloud signup allows email-verified account requests without any Android Device ID',async()=>{
+ const h=harness({member:false});const r=await h.call({action:'request_account',business_name:'Café without tablet'});
+ assert.equal(r.status,200);assert.equal((await r.json()).requested,true);
+ const upsert=h.calls.find(([u])=>u.includes('brew_signup_requests?on_conflict'));
+ assert.equal(JSON.parse(upsert[1].body).android_device_id,null);
+});
+test('expired, suspended or unapproved cloud clients cannot register or use catalog',async()=>{
+ for(const options of [{accountStatus:null},{accountStatus:'suspended'},{accountExpiresAt:'2020-01-01T00:00:00Z'}]){
+  const h=harness(options);
+  const r=await h.call({action:'catalog'});
+  assert.equal(r.status,403);
+  const body=await r.json();assert.match(body.error,/unapproved|suspended|expired/);
+ }
 });

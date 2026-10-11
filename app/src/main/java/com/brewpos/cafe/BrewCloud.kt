@@ -128,6 +128,27 @@ object BrewCloud {
         store(ctx,next)
         return next.access
     }
+    /** Passwordless email verification for Cloud POS. Never creates a café membership. */
+    suspend fun sendEmailCode(email:String):Unit = withContext(Dispatchers.IO) {
+        val value=email.trim().lowercase()
+        require(value.contains("@") && value.length<=254) { "Enter a valid email." }
+        request("$BASE/auth/v1/otp",
+            JSONObject().put("email",value).put("create_user",true))
+        Unit
+    }
+    suspend fun verifyEmailCode(ctx:Context,email:String,code:String):Unit = withContext(Dispatchers.IO) {
+        require(code.matches(Regex("[0-9]{6,8}"))) { "Enter the numeric email verification code." }
+        val response=request("$BASE/auth/v1/verify",
+            JSONObject().put("type","email").put("email",email.trim().lowercase()).put("token",code))
+        store(ctx,parseTokens(response))
+    }
+    suspend fun requestCloudApproval(ctx:Context,business:String,deviceId:String):Unit = withContext(Dispatchers.IO) {
+        val body=JSONObject().put("action","request_account")
+            .put("business_name",business.trim())
+            .put("android_device_id",deviceId.lowercase())
+        val r=request(syncPath(),body,validToken(ctx))
+        require(r.optBoolean("requested")) { "Cloud approval request not accepted" }
+    }
     suspend fun memberships(ctx:Context):JSONObject = withContext(Dispatchers.IO) {
         lock.withLock { request(syncPath(),JSONObject().put("action","whoami"),validToken(ctx)) }
     }

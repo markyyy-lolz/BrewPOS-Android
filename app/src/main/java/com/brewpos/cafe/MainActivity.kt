@@ -15,6 +15,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -33,6 +34,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -44,11 +46,11 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
-private val Coffee = Color(0xFF30241D)
+private val Coffee = Color(0xFF2D1F1A)
 private val Cocoa = Color(0xFF756458)
 private val Cream = Color(0xFFF7F5F1)
-private val Gold = Color(0xFFC68958)
-private val Leaf = Color(0xFF386A54)
+private val Gold = Color(0xFFC4602F)
+private val Leaf = Color(0xFF254D3B)
 private val Pale = Color(0xFFF1E9DD)
 private val CoffeeTheme = lightColorScheme(
     primary = Coffee, onPrimary = Color.White, secondary = Leaf,
@@ -72,39 +74,118 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun LicensedBrewPos() {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("brewpos_activation", Context.MODE_PRIVATE) }
-    val deviceId = remember { Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown-device" }
-    var activeKey by remember { mutableStateOf(prefs.getString("signed_license", "") ?: "") }
-    var showRenewal by remember { mutableStateOf(false) }
+    val ctx=LocalContext.current
+    val prefs=remember { ctx.getSharedPreferences("brewpos_activation",Context.MODE_PRIVATE) }
+    val deviceId=remember { Settings.Secure.getString(ctx.contentResolver,Settings.Secure.ANDROID_ID)?:"unknown-device" }
+    var mode by remember { mutableStateOf(prefs.getString("access_mode","")?:"") }
+    var activeKey by remember { mutableStateOf(prefs.getString("signed_license","")?:"") }
     var tick by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) { delay(30_000); tick = System.currentTimeMillis() }
+    var cloudVerified by remember { mutableStateOf(false) }
+    var cloudPlan by remember { mutableStateOf("CLOUD") }
+    var cloudCheckedAt by remember { mutableLongStateOf(0L) }
+    var cloudMessage by remember { mutableStateOf("Checking account approval…") }
+    val db=remember { StoreDb(ctx.applicationContext) }
+    LaunchedEffect(Unit) { while(true){delay(30000);tick=System.currentTimeMillis()} }
+    val offline=LicenseManager.evaluate(activeKey,deviceId,tick,prefs.getLong("last_checked",0))
+    LaunchedEffect(mode,tick) {
+        if(mode=="cloud" && BrewCloud.signedIn(ctx)){
+            runCatching{BrewCloud.memberships(ctx)}.onSuccess{data->
+                val memberships=data.optJSONArray("memberships")
+                val bound=db.binding()
+                val member=(0 until (memberships?.length()?:0))
+                    .map{memberships!!.getJSONObject(it)}
+                    .firstOrNull{bound==null||it.optString("organization_id")==bound.first}
+                cloudVerified=member!=null
+                cloudCheckedAt=if(cloudVerified)System.currentTimeMillis() else 0L
+                cloudPlan=member?.optJSONObject("entitlement")?.optString("plan","CLOUD")?:"CLOUD"
+                cloudMessage=if(member!=null)"Cloud account verified"
+                    else when(data.optJSONObject("account_request")?.optString("status")){
+                        "pending"->"Waiting for Azurate client approval"
+                        "rejected"->"Cloud registration was rejected"
+                        else->"No approved cloud account found"
+                    }
+            }.onFailure{cloudVerified=false;cloudCheckedAt=0;cloudMessage=it.message?:"Cloud offline"}
+        }else cloudVerified=false
     }
-    val status = LicenseManager.evaluate(activeKey, deviceId, tick, prefs.getLong("last_checked", 0))
-    LaunchedEffect(tick, activeKey) {
-        if (status.active && tick > prefs.getLong("last_checked", 0))
-            prefs.edit().putLong("last_checked", tick).apply()
+    fun changeMode(value:String){
+        mode=value;cloudVerified=false
+        prefs.edit().putString("access_mode",value).apply()
     }
-    fun activate(code: String): String? {
-        val now = System.currentTimeMillis()
-        val candidate = LicenseManager.evaluate(code.trim(), deviceId, now, prefs.getLong("last_checked", 0))
-        if (!candidate.active) return candidate.message
-        prefs.edit().putString("signed_license", code.trim()).putLong("last_checked", now).apply()
-        activeKey = code.trim()
-        tick = now
-        showRenewal = false
+    fun activate(code:String):String?{
+        val now=System.currentTimeMillis()
+        val candidate=LicenseManager.evaluate(code.trim(),deviceId,now,prefs.getLong("last_checked",0))
+        if(!candidate.active)return candidate.message
+        prefs.edit().putString("signed_license",code.trim()).putLong("last_checked",now).apply()
+        activeKey=code.trim();tick=now
         return null
     }
-    fun canCheckout(): Boolean {
-        val now = System.currentTimeMillis()
-        val checked = LicenseManager.evaluate(activeKey, deviceId, now, prefs.getLong("last_checked", 0))
-        if (checked.active && now > prefs.getLong("last_checked", 0)) prefs.edit().putLong("last_checked", now).apply()
-        return checked.active
+    fun canCheckout():Boolean{
+        val now=System.currentTimeMillis()
+        if(mode=="offline"){
+            val valid=LicenseManager.evaluate(activeKey,deviceId,now,prefs.getLong("last_checked",0)).active
+            if(valid&&now>prefs.getLong("last_checked",0))prefs.edit().putLong("last_checked",now).apply()
+            return valid
+        }
+        return mode=="cloud"&&cloudVerified&&
+            (now-cloudCheckedAt in 0L..90000L)&&
+            BrewCloud.signedIn(ctx)&&db.binding()!=null
     }
-    if (!status.active || showRenewal) {
-        ActivationScreen(deviceId, status, showRenewal && status.active, onCancel = { showRenewal = false }, onActivate = { code -> activate(code) })
-    } else BrewPosApp(licenseStatus = status, onManageLicense = { showRenewal = true }, canCheckout = { canCheckout() })
+    when{
+        mode.isBlank()->AccessModeScreen(deviceId,onCloud={changeMode("cloud")},
+            onOffline={changeMode("offline")})
+        mode=="offline"&&!offline.active->ActivationScreen(deviceId,offline,false,
+            onCancel={changeMode("")},onActivate={activate(it)})
+        mode=="offline"->BrewPosApp(offline,onManageLicense={changeMode("")},
+            canCheckout={canCheckout()},accessMode="offline")
+        mode=="cloud"&&(!cloudVerified||db.binding()==null)->{
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().background(Color.White).padding(8.dp),
+                    horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+                    TextButton(onClick={changeMode("")}){Text("← Choose access mode")}
+                    Text(cloudMessage,color=Leaf,fontSize=11.sp)
+                }
+                CloudScreen(ctx,db,onUpdated={tick=System.currentTimeMillis()})
+            }
+        }
+        mode=="cloud"->BrewPosApp(LicenseManager.Status(true,plan="CLOUD "+cloudPlan),
+            onManageLicense={changeMode("")},canCheckout={canCheckout()},accessMode="cloud")
+        else->AccessModeScreen(deviceId,onCloud={changeMode("cloud")},
+            onOffline={changeMode("offline")})
+    }
+}
+
+@Composable
+private fun AccessModeScreen(deviceId:String,onCloud:()->Unit,onOffline:()->Unit){
+    Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState())
+        .padding(horizontal=22.dp,vertical=25.dp),verticalArrangement=Arrangement.spacedBy(18.dp)){
+        Text("☕  BREWPOS",fontSize=27.sp,fontWeight=FontWeight.Black,color=Coffee)
+        Text("Welcome to BrewPOS",fontSize=29.sp,fontWeight=FontWeight.Black,color=Coffee)
+        Text("Choose how you'll run your café",color=Cocoa,fontSize=15.sp)
+        Surface(Modifier.fillMaxWidth().clickable(onClick=onCloud),
+            color=Leaf,shape=RoundedCornerShape(24.dp),shadowElevation=3.dp){
+            Column(Modifier.padding(25.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+                Text("☁",fontSize=31.sp,color=Color.White)
+                Text("Cloud POS  →",fontSize=24.sp,fontWeight=FontWeight.Black,color=Color.White)
+                Text("Sign in with your approved café account. Cloud inventory, staff, branches and kiosk orders.",
+                    fontSize=13.sp,color=Color(0xFFE7F0E9),lineHeight=20.sp)
+                Text("Internet and account approval required for checkout",
+                    fontSize=11.sp,color=Color(0xFFD0E9D8))
+            }
+        }
+        Surface(Modifier.fillMaxWidth().clickable(onClick=onOffline),color=Color.White,
+            shape=RoundedCornerShape(24.dp),shadowElevation=3.dp){
+            Column(Modifier.padding(25.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+                Text("🔑",fontSize=31.sp)
+                Text("Offline POS  →",fontSize=24.sp,fontWeight=FontWeight.Black,color=Coffee)
+                Text("Use a signed device license. Keep selling with local SQLite when the internet is down.",
+                    color=Cocoa,fontSize=13.sp,lineHeight=20.sp)
+                Text("Device-bound BP1 license required",color=Leaf,fontSize=11.sp)
+            }
+        }
+        Text("Device ID: "+deviceId,fontSize=11.sp,color=Cocoa)
+        Text("Switching modes does not delete receipts or reassign pending sales between branches.",
+            fontSize=11.sp,color=Cocoa)
+    }
 }
 
 @Composable
@@ -117,7 +198,7 @@ private fun ActivationScreen(
     var error by remember { mutableStateOf("") }
     BoxWithConstraints(Modifier.fillMaxSize().background(Cream)) {
         val wide = maxWidth >= 760.dp
-        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.Top) {
             if (wide) Column(
                 Modifier.width(340.dp).fillMaxHeight().background(Coffee).padding(28.dp),
                 verticalArrangement = Arrangement.SpaceBetween
@@ -137,16 +218,20 @@ private fun ActivationScreen(
                 }
                 Text("AZURATE SOFTWARE SOLUTIONS", color = Color(0xFFCEB7A5), fontSize = 11.sp)
             }
-            Box(Modifier.weight(1f).padding(if (wide) 26.dp else 12.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(1f).fillMaxHeight()
+                .verticalScroll(rememberScrollState()).imePadding()
+                .padding(horizontal=if(wide)26.dp else 14.dp,vertical=if(wide)30.dp else 16.dp),
+                contentAlignment = Alignment.TopCenter) {
                 Surface(
                     modifier = Modifier.fillMaxWidth().widthIn(max = 510.dp),
                     color = Color.White, shape = RoundedCornerShape(28.dp), shadowElevation = 4.dp
                 ) {
-                    Column(Modifier.verticalScroll(rememberScrollState()).padding(26.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.padding(if(wide)26.dp else 19.dp),
+                        verticalArrangement = Arrangement.spacedBy(9.dp)) {
                         if (!wide) Text("☕ BREWPOS", color = Coffee, fontWeight = FontWeight.Black, fontSize = 22.sp)
-                        Text("Welcome to BrewPOS", color = Coffee, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold)
-                        Text("Activate this device to start selling.", color = Cocoa, fontSize = 13.sp)
+                        Text("Activate your BrewPOS", color = Coffee, fontSize = if(wide)27.sp else 23.sp,
+                            fontWeight = FontWeight.ExtraBold)
+                        Text("Secure device activation • Android café POS", color = Cocoa, fontSize = 12.sp)
                         if (current.message.isNotBlank()) Surface(color = Pale, shape = RoundedCornerShape(14.dp)) {
                             Text(current.message, modifier = Modifier.padding(12.dp), color = Coffee, fontSize = 12.sp)
                         }
@@ -162,11 +247,12 @@ private fun ActivationScreen(
                                 }) { Text("Copy device ID ↗") }
                             }
                         }
-                        Text("Send this device ID to Azurate to request your license.", color = Cocoa, fontSize = 12.sp)
+                        Text("Copy the Device ID above, then issue a signed activation in the owner dashboard.",
+                            color = Cocoa, fontSize = 11.sp)
                         OutlinedTextField(
                             value = input, onValueChange = { input = it; error = "" },
                             modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-                            label = { Text("Paste activation code") }, minLines = 3, maxLines = 5
+                            label = { Text("Paste signed activation code") }, minLines = 2, maxLines = 3
                         )
                         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                         Button(
@@ -175,7 +261,7 @@ private fun ActivationScreen(
                             modifier = Modifier.fillMaxWidth().height(54.dp)
                         ) { Text("Activate BrewPOS →", fontWeight = FontWeight.Bold) }
                         if (canCancel) TextButton(onClick = onCancel) { Text("Back to POS") }
-                        Text("Lifetime, monthly and trial activation. 72-hour grace applies to expired time-limited plans.",
+                        Text("Signed lifetime, monthly or trial license · Offline verification.",
                             color = Cocoa, fontSize = 11.sp, textAlign = TextAlign.Center)
                     }
                 }
@@ -185,7 +271,7 @@ private fun ActivationScreen(
 }
 
 @Composable
-private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: () -> Unit, canCheckout: () -> Boolean) {
+private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: () -> Unit, canCheckout: () -> Boolean, accessMode:String) {
     val context = LocalContext.current
     val db = remember { StoreDb(context.applicationContext) }
     val prefs = remember { context.getSharedPreferences("shop_prefs", Context.MODE_PRIVATE) }
@@ -201,8 +287,8 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
     var allProducts by remember { mutableStateOf(db.products(includeArchived = true)) }
     var allSales by remember { mutableStateOf(db.sales()) }
     val cart = remember { mutableStateListOf<CartLine>() }
-    var tab by remember { mutableStateOf("Dashboard") }
-    val isWide = LocalConfiguration.current.screenWidthDp >= 1100
+    var tab by remember { mutableStateOf(if(accessMode=="cloud")"Cloud" else "POS") }
+    val isWide = LocalConfiguration.current.screenWidthDp >= 700
     var cartOnPhone by remember { mutableStateOf(false) }
     var customizing by remember { mutableStateOf<Product?>(null) }
     var editing by remember { mutableStateOf<Product?>(null) }
@@ -312,17 +398,38 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             Row(
-                Modifier.fillMaxWidth().background(Cream).statusBarsPadding().padding(horizontal = 20.dp, vertical = 13.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("☕  BREWPOS", modifier = Modifier.clickable { tab = "Dashboard" }, color = Coffee, fontWeight = FontWeight.Black, fontSize = 20.sp)
-                    Text(shopName, color = Cocoa, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Surface(color = Color.White, shape = RoundedCornerShape(22.dp)) {
-                    TextButton(onClick = onManageLicense) {
-                        Text(if (licenseStatus.grace) "⚠ Renew license" else "✓ ${licenseStatus.plan}", color = if (licenseStatus.grace) Color.Red else Leaf, fontSize = 11.sp)
+                Modifier.fillMaxWidth().background(Color.White).statusBarsPadding()
+                    .padding(horizontal=if(isWide)20.dp else 13.dp,vertical=10.dp),
+                verticalAlignment=Alignment.CenterVertically,
+                horizontalArrangement=Arrangement.spacedBy(14.dp)
+            ){
+                if(!isWide) {
+                    Text("☕ BREWPOS",fontWeight=FontWeight.Black,color=Coffee,fontSize=19.sp,
+                        modifier=Modifier.clickable{tab="POS"})
+                } else {
+                    Surface(color=Cream,shape=RoundedCornerShape(23.dp),
+                        modifier=Modifier.weight(1f)) {
+                        Row(Modifier.padding(horizontal=15.dp,vertical=11.dp),
+                            verticalAlignment=Alignment.CenterVertically){
+                            Text("⌕",fontSize=20.sp,color=Cocoa)
+                            Spacer(Modifier.width(9.dp))
+                            Text("BrewPOS  •  "+shopName,color=Coffee,fontWeight=FontWeight.SemiBold,
+                                fontSize=13.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        }
                     }
+                }
+                Surface(color=Cream,shape=RoundedCornerShape(16.dp)){
+                    Row(Modifier.padding(horizontal=12.dp,vertical=10.dp),
+                        verticalAlignment=Alignment.CenterVertically){
+                        Text("●",color=Leaf,fontSize=11.sp)
+                        Spacer(Modifier.width(7.dp))
+                        Text(if(db.binding()!=null)"Branch linked"else"Local POS",
+                            color=Coffee,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                    }
+                }
+                TextButton(onClick=onManageLicense){
+                    Text(if(licenseStatus.grace)"⚠ Renew"else"✓ "+licenseStatus.plan,
+                        color=if(licenseStatus.grace)Color.Red else Leaf,fontSize=11.sp)
                 }
             }
         },
@@ -344,14 +451,15 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 "Dashboard" -> DashboardView(db, allProducts, allSales,
                     onSell = { tab = "POS" }, onOrders = { tab = "Orders" }, onMenu = { tab = "Menu" })
                 "POS" -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                    if (maxWidth >= 840.dp) {
+                    val extraWide = maxWidth >= 950.dp
+                    if (maxWidth >= 650.dp) {
                         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                             ProductCatalog(allProducts.filter { it.active }, Modifier.weight(1f), onProduct = { customizing = it })
-                            CartPanel(cart, Modifier.width(390.dp).fillMaxHeight(), onSubmit = { service, method, discountText, tenderText, note ->
+                            CartPanel(cart, Modifier.width(if (extraWide) 385.dp else 290.dp).fillMaxHeight(), onSubmit = { service, method, discountText, tenderText, note ->
                                 val discount = parseMoney(discountText)
                                 val tendered = if (method == "Cash") parseMoney(tenderText) else 0
                                 if (discount == null || (method == "Cash" && tendered == null)) alert("Enter valid payment amounts")
-                                else if (!canCheckout()) alert("License expired. Renew the activation code before checkout.")
+                                else if (!canCheckout()) alert(if(accessMode=="cloud")"Cloud account verification required. Open Cloud to check branch setup." else "Offline license expired. Renew to checkout.")
                                     else runCatching { db.checkout(cart.toList(), service, method, discount, tendered ?: 0, note) }
                                     .onSuccess { afterSale(it) }
                                     .onFailure { alert(it.message ?: "Checkout failed") }
@@ -365,7 +473,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                                     val discount = parseMoney(discountText)
                                     val tendered = if (method == "Cash") parseMoney(tenderText) else 0
                                     if (discount == null || (method == "Cash" && tendered == null)) alert("Enter valid payment amounts")
-                                    else if (!canCheckout()) alert("License expired. Renew the activation code before checkout.")
+                                    else if (!canCheckout()) alert(if(accessMode=="cloud")"Cloud account verification required. Open Cloud to check branch setup." else "Offline license expired. Renew to checkout.")
                                     else runCatching { db.checkout(cart.toList(), service, method, discount, tendered ?: 0, note) }
                                         .onSuccess { cartOnPhone = false; afterSale(it) }
                                         .onFailure { alert(it.message ?: "Checkout failed") }
@@ -410,6 +518,7 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                 })
                 "Reports" -> ReportsView(db, allSales)
                 "Settings" -> SettingsView(shopName, footer, printerMac, baristaMac, kitchenMac, printerWidth, autoCut, autoPrintBoth,
+                    accessMode,db.binding()!=null,db.pendingSyncCount(),allSales.size,
                     onSave = { newName, newFooter, mac, barista, kitchen, width, cut, autoBoth ->
                         shopName = newName.ifBlank { "Coffee Shop" }; footer = newFooter
                         printerMac = mac; baristaMac = barista; kitchenMac = kitchen
@@ -422,7 +531,30 @@ private fun BrewPosApp(licenseStatus: LicenseManager.Status, onManageLicense: ()
                     }, onRequestPermission = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                             requestNearby.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                    }, onExport = { exportCsv.launch("brewpos-sales.csv") })
+                    }, onExport = { exportCsv.launch("brewpos-sales.csv") },
+                    onManageAccess=onManageLicense,onCloud={tab="Cloud"},
+                    onSync={
+                        scope.launch{
+                            runCatching{BrewCloud.uploadPending(context)}
+                                .onSuccess{alert("Synced "+it+" local events. Cloud menu refreshed.");refresh()}
+                                .onFailure{alert(it.message?:"Cloud sync unavailable; local sales kept")}
+                        }
+                    },onTestPrinter={address,label->
+                        if(!ThermalPrinter.permissionGranted(context)){
+                            if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S)
+                                requestNearby.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                            alert("Enable Nearby Devices permission first")
+                        }else if(address.isBlank())alert("Assign the "+label+" printer first")
+                        else scope.launch{
+                            val bytes=byteArrayOf(27,64)+
+                                ("BREWPOS TEST TICKET\n"+label+" PRINTER\n"+
+                                    "This is not a customer receipt.\n\n\n")
+                                    .toByteArray(Charsets.UTF_8)
+                            ThermalPrinter.print(context,address,bytes)
+                                .onSuccess{alert(label+" test sent. Confirm paper printed.")}
+                                .onFailure{alert(label+" printer error: "+it.message)}
+                        }
+                    })
             }
             }
         }
@@ -459,42 +591,70 @@ private fun SectionTitle(title: String, subtitle: String = "") {
 private fun ProductCatalog(products: List<Product>, modifier: Modifier, onProduct: (Product) -> Unit) {
     var search by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("All") }
-    // Approved cloud catalogs can have café-defined categories, not only preset drinks.
-    val categories = listOf("All") + products.map { it.category }.filter { it.isNotBlank() }.distinct().sorted()
-    LaunchedEffect(categories) { if (category !in categories) category = "All" }
-    val filtered = products.filter {
-        (category == "All" || it.category == category) && it.name.contains(search, ignoreCase = true)
+    val categories=listOf("All")+products.map {it.category}.filter{it.isNotBlank()}.distinct().sorted()
+    LaunchedEffect(categories){if(category !in categories)category="All"}
+    val filtered=products.filter {
+        (category=="All"||it.category==category)&&it.name.contains(search,ignoreCase=true)
     }
     Column(modifier) {
-        SectionTitle("Explore the menu", "Choose a coffee and make it yours")
-        OutlinedTextField(value = search, onValueChange = { search = it },
-            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
-            singleLine = true, label = { Text("Search coffee, pastries, tea...") }, leadingIcon = { Text("⌕", fontSize = 22.sp) })
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            categories.forEach { item -> FilterChip(selected = item == category, onClick = { category = item }, label = { Text(item) }) }
+        Text("What are we brewing today?",fontSize=23.sp,fontWeight=FontWeight.Black,color=Coffee)
+        Text("Pick a favorite and customize it for your customer",
+            color=Cocoa,fontSize=12.sp)
+        Spacer(Modifier.height(13.dp))
+        OutlinedTextField(value=search,onValueChange={search=it},
+            modifier=Modifier.fillMaxWidth(),
+            shape=RoundedCornerShape(19.dp),singleLine=true,
+            placeholder={Text("Search menu items, SKU or drinks…",fontSize=13.sp)},
+            leadingIcon={Text("⌕",fontSize=23.sp,color=Leaf)})
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical=11.dp),
+            horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            categories.forEach{item->
+                FilterChip(selected=item==category,onClick={category=item},
+                    label={Text(item,fontSize=12.sp)},shape=RoundedCornerShape(19.dp),
+                    colors=FilterChipDefaults.filterChipColors(
+                        selectedContainerColor=Leaf,selectedLabelColor=Color.White))
+            }
         }
-        Spacer(Modifier.height(10.dp))
-        if (filtered.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No products found", color = Cocoa) }
-        else LazyVerticalGrid(columns = GridCells.Adaptive(minSize = 155.dp),
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(bottom = 100.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(filtered, key = { it.id }) { p ->
-                Surface(modifier = Modifier.fillMaxWidth().clickable(enabled = !p.trackStock || p.stock > 0) { onProduct(p) },
-                    color = Color.White, shape = RoundedCornerShape(22.dp), shadowElevation = 1.dp) {
-                    Column(Modifier.padding(15.dp)) {
-                        Box(Modifier.fillMaxWidth().height(94.dp).background(Pale, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
-                            Text(p.icon, fontSize = 47.sp)
+        if(filtered.isEmpty())Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){
+            Text("No menu items match your search.",color=Cocoa)
+        } else LazyVerticalGrid(columns=GridCells.Adaptive(minSize=136.dp),
+            modifier=Modifier.weight(1f).fillMaxWidth(),
+            contentPadding=PaddingValues(bottom=14.dp),
+            horizontalArrangement=Arrangement.spacedBy(10.dp),
+            verticalArrangement=Arrangement.spacedBy(10.dp)){
+            items(filtered,key={it.id}){p->
+                val available=!p.trackStock||p.stockMilli>0L
+                Surface(Modifier.fillMaxWidth().clickable(enabled=available){onProduct(p)},
+                    color=Color.White,shape=RoundedCornerShape(20.dp),shadowElevation=2.dp){
+                    Column(Modifier.padding(9.dp)){
+                        val tone=when {
+                            p.category.contains("tea",true)->Color(0xFFDCE7D5)
+                            p.category.contains("pastr",true)->Color(0xFFEFD9C1)
+                            else->Color(0xFFEAD9C8)
                         }
-                        Spacer(Modifier.height(10.dp))
-                        Text(p.category.uppercase(), fontSize = 10.sp, color = Leaf, fontWeight = FontWeight.Bold)
-                        Text(p.name, fontWeight = FontWeight.Bold, color = Coffee, fontSize = 15.sp,
-                            maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(8.dp))
-                        Text(peso(p.priceCents.toLong()), fontWeight = FontWeight.ExtraBold, color = Coffee, fontSize = 17.sp)
-                        Text(if (!p.trackStock) "Available" else if (p.stockMilli < 0L) "${p.stockLabel} (shortage)" else if (p.stockMilli == 0L) "Out of stock" else "${p.stockLabel} left",
-                            color = if (p.trackStock && p.stock < 6) Color(0xFFB04B2E) else Leaf, fontSize = 11.sp)
+                        Box(Modifier.fillMaxWidth().height(101.dp)
+                            .background(Brush.verticalGradient(listOf(tone,Cream)),
+                                RoundedCornerShape(14.dp)),contentAlignment=Alignment.Center){
+                            Box(Modifier.size(75.dp).background(Color.White.copy(alpha=.3f),CircleShape),
+                                contentAlignment=Alignment.Center){
+                                Text(p.icon,fontSize=49.sp)
+                            }
+                        }
+                        Column(Modifier.padding(start=4.dp,end=4.dp,top=9.dp,bottom=5.dp)){
+                            Text(p.name,fontWeight=FontWeight.Bold,color=Coffee,
+                                fontSize=14.sp,minLines=2,maxLines=2,
+                                overflow=TextOverflow.Ellipsis)
+                            Text(p.category,color=Cocoa,fontSize=11.sp)
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                Text(peso(p.priceCents.toLong()),color=Gold,fontWeight=FontWeight.Black,
+                                    fontSize=16.sp,modifier=Modifier.weight(1f))
+                                Text(if(available)"＋"else"×",color=if(available)Leaf else Color.Red,
+                                    fontSize=19.sp)
+                            }
+                            if(p.trackStock && (p.stockMilli<=0L || p.stockMilli<5000L))
+                                Text(if(p.stockMilli<=0L)"Sold out"else p.stockLabel+" remaining",
+                                    color=Color(0xFFB04B2E),fontSize=10.sp)
+                        }
                     }
                 }
             }
@@ -559,76 +719,129 @@ private fun CartPanel(cart: List<CartLine>, modifier: Modifier = Modifier,
     var discountText by remember { mutableStateOf("0") }
     var tenderText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
-    val discount = parseMoney(discountText)
-    val totals = CartMath.totals(cart, discount ?: 0)
-    val tendered = parseMoney(tenderText)
-    val enough = payment != "Cash" || (tendered != null && tendered >= totals.payable)
-    // Fresh order must not inherit the previous customer's instructions or cash tender.
-    LaunchedEffect(cart.isEmpty()) {
-        if (cart.isEmpty()) {
-            service = "Dine-in"; payment = "Cash"; discountText = "0"; tenderText = ""; note = ""
+    val discount=parseMoney(discountText)
+    val totals=CartMath.totals(cart,discount?:0)
+    val tendered=parseMoney(tenderText)
+    val enough=payment!="Cash"||(tendered!=null&&tendered>=totals.payable)
+    LaunchedEffect(cart.isEmpty()){
+        if(cart.isEmpty()){
+            service="Dine-in";payment="Cash";discountText="0";tenderText="";note=""
         }
     }
-    Surface(modifier, color = Color.White, shape = RoundedCornerShape(22.dp), shadowElevation = 1.dp) {
-        Column(Modifier.fillMaxSize().padding(17.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Current order", fontSize = 22.sp, color = Coffee, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-                Text("${cart.sumOf { it.quantity }} items", color = Cocoa, fontSize = 12.sp)
-            }
-            Spacer(Modifier.height(7.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Dine-in", "Takeout").forEach {
-                    FilterChip(selected = service == it, onClick = { service = it }, label = { Text(it) })
+    Surface(modifier,color=Color.White,shape=RoundedCornerShape(22.dp),shadowElevation=2.dp){
+        Column(Modifier.fillMaxSize().padding(15.dp)){
+            Row(verticalAlignment=Alignment.CenterVertically){
+                Text("🛍",fontSize=25.sp)
+                Spacer(Modifier.width(7.dp))
+                Column(Modifier.weight(1f)){
+                    Text("Current order",color=Coffee,fontSize=21.sp,fontWeight=FontWeight.Black)
+                    Text(cart.sumOf{it.quantity}.toString()+" item(s) selected",
+                        color=Cocoa,fontSize=11.sp)
                 }
             }
-            HorizontalDivider(Modifier.padding(vertical = 10.dp))
-            if (cart.isEmpty()) Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🛍", fontSize = 42.sp)
-                    Text("Your cart is empty", fontWeight = FontWeight.Bold)
-                    Text("Add a coffee to start", color = Cocoa)
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical=8.dp),
+                horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                listOf("Dine-in","Takeout").forEach{
+                    FilterChip(selected=service==it,onClick={service=it},label={Text(it,fontSize=12.sp)},
+                        shape=RoundedCornerShape(15.dp),
+                        colors=FilterChipDefaults.filterChipColors(
+                            selectedContainerColor=Leaf,selectedLabelColor=Color.White))
                 }
-            } else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(13.dp)) {
-                items(cart, key = { it.key }) { line ->
-                    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text("${line.quantity}×", fontWeight = FontWeight.Bold, color = Leaf)
-                        Column(Modifier.weight(1f)) {
-                            Text(line.product.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            if (line.options.isNotBlank()) Text(line.options, color = Cocoa, fontSize = 11.sp)
-                            Text(peso(line.lineCents.toLong()), fontWeight = FontWeight.Bold)
-                        }
-                        TextButton(onClick = { (cart as? MutableList<CartLine>)?.remove(line) }, contentPadding = PaddingValues(0.dp)) {
-                            Text("Remove", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+            }
+            HorizontalDivider(color=Pale)
+            if(cart.isEmpty())Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center){
+                Column(horizontalAlignment=Alignment.CenterHorizontally,
+                    verticalArrangement=Arrangement.spacedBy(8.dp)){
+                    Text("🛒",fontSize=43.sp)
+                    Text("Start a new order",color=Coffee,fontWeight=FontWeight.Bold)
+                    Text("Tap a menu card to add an item",color=Cocoa,fontSize=12.sp)
+                }
+            }else LazyColumn(Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement=Arrangement.spacedBy(9.dp),
+                contentPadding=PaddingValues(vertical=8.dp)){
+                items(cart,key={it.key}){line->
+                    Surface(color=Cream,shape=RoundedCornerShape(14.dp)){
+                        Column(Modifier.fillMaxWidth().padding(10.dp),
+                            verticalArrangement=Arrangement.spacedBy(5.dp)){
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                Box(Modifier.size(39.dp).background(Pale,RoundedCornerShape(10.dp)),
+                                    contentAlignment=Alignment.Center){Text(line.product.icon,fontSize=23.sp)}
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)){
+                                    Text(line.product.name,fontWeight=FontWeight.Bold,
+                                        fontSize=13.sp,color=Coffee,maxLines=2,
+                                        overflow=TextOverflow.Ellipsis)
+                                    if(line.options.isNotBlank())Text(line.options,
+                                        color=Cocoa,fontSize=10.sp,maxLines=1,
+                                        overflow=TextOverflow.Ellipsis)
+                                }
+                                Text(peso(line.lineCents.toLong()),color=Coffee,fontWeight=FontWeight.Bold,
+                                    fontSize=12.sp)
+                            }
+                            Row(verticalAlignment=Alignment.CenterVertically){
+                                TextButton(onClick={
+                                    val mutable=cart as? MutableList<CartLine>
+                                    val index=mutable?.indexOf(line)?:-1
+                                    if(index>=0){
+                                        if(line.quantity>1)mutable?.set(index,line.copy(quantity=line.quantity-1))
+                                        else mutable?.removeAt(index)
+                                    }
+                                },contentPadding=PaddingValues(0.dp)){Text("−",fontSize=18.sp)}
+                                Text(line.quantity.toString(),fontWeight=FontWeight.Bold,color=Coffee)
+                                TextButton(onClick={
+                                    val mutable=cart as? MutableList<CartLine>
+                                    val index=mutable?.indexOf(line)?:-1
+                                    if(index>=0&&line.quantity<99)
+                                        mutable?.set(index,line.copy(quantity=line.quantity+1))
+                                },contentPadding=PaddingValues(0.dp)){Text("+",fontSize=18.sp)}
+                                Spacer(Modifier.weight(1f))
+                                TextButton(onClick={(cart as? MutableList<CartLine>)?.remove(line)},
+                                    contentPadding=PaddingValues(0.dp)){Text("Remove",fontSize=11.sp,color=Color(0xFFB04B2E))}
+                            }
                         }
                     }
                 }
             }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Cash", "GCash", "Maya", "Card").forEach {
-                    FilterChip(selected = payment == it, onClick = { payment = it }, label = { Text(it, fontSize = 11.sp) })
+            HorizontalDivider(Modifier.padding(vertical=7.dp),color=Pale)
+            OutlinedTextField(value=note,onValueChange={note=it},
+                modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),
+                singleLine=true,label={Text("Order note / table",fontSize=11.sp)})
+            Spacer(Modifier.height(6.dp))
+            MoneyRow("Subtotal",peso(totals.subtotal.toLong()))
+            MoneyRow("Discount","− "+peso(totals.discount.toLong()))
+            MoneyRow("Total",peso(totals.payable.toLong()),prominent=true)
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical=8.dp),
+                horizontalArrangement=Arrangement.spacedBy(5.dp)){
+                listOf("Cash","GCash","Maya","Card").forEach{
+                    FilterChip(selected=payment==it,onClick={payment=it},
+                        label={Text(it,fontSize=11.sp)},shape=RoundedCornerShape(13.dp),
+                        colors=FilterChipDefaults.filterChipColors(
+                            selectedContainerColor=Leaf,selectedLabelColor=Color.White))
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = discountText, onValueChange = { discountText = it }, modifier = Modifier.weight(1f),
-                    label = { Text("Discount ₱") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                if (payment == "Cash") OutlinedTextField(value = tenderText, onValueChange = { tenderText = it }, modifier = Modifier.weight(1f),
-                    label = { Text("Tendered ₱") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                OutlinedTextField(discountText,{discountText=it},modifier=Modifier.weight(1f),
+                    singleLine=true,label={Text("Discount ₱",fontSize=11.sp)},
+                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal))
+                if(payment=="Cash")OutlinedTextField(tenderText,{tenderText=it},
+                    modifier=Modifier.weight(1f),singleLine=true,
+                    label={Text("Cash received ₱",fontSize=11.sp)},
+                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal))
             }
-            OutlinedTextField(value = note, onValueChange = { note = it }, modifier = Modifier.fillMaxWidth(),
-                label = { Text("Order note / table no. (optional)") }, maxLines = 2, singleLine = true)
-            Spacer(Modifier.height(10.dp))
-            MoneyRow("Subtotal", peso(totals.subtotal.toLong()))
-            MoneyRow("Discount", "− ${peso(totals.discount.toLong())}")
-            MoneyRow("Total", peso(totals.payable.toLong()), prominent = true)
-            if (payment == "Cash" && tendered != null && tendered >= totals.payable)
-                MoneyRow("Change", peso((tendered - totals.payable).toLong()))
-            Spacer(Modifier.height(10.dp))
-            Button(onClick = { onSubmit(service, payment, discountText, tenderText, note.trim()) },
-                enabled = cart.isNotEmpty() && discount != null && enough, modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(16.dp)) {
-                Text("Charge  ${peso(totals.payable.toLong())}  →", fontWeight = FontWeight.Bold)
+            if(payment=="Cash"&&tendered!=null&&tendered>=totals.payable)
+                MoneyRow("Change",peso((tendered-totals.payable).toLong()))
+            Spacer(Modifier.height(8.dp))
+            Button(onClick={onSubmit(service,payment,discountText,tenderText,note.trim())},
+                enabled=cart.isNotEmpty()&&discount!=null&&enough,
+                modifier=Modifier.fillMaxWidth().height(56.dp),
+                colors=ButtonDefaults.buttonColors(containerColor=Gold),
+                shape=RoundedCornerShape(16.dp)){
+                Text("Process payment  →  "+peso(totals.payable.toLong()),
+                    fontWeight=FontWeight.Bold,fontSize=14.sp)
             }
+            if(payment!="Cash")Text("Non-cash entries are recorded manually; no payment gateway is charged.",
+                color=Cocoa,fontSize=10.sp,textAlign=TextAlign.Center,
+                modifier=Modifier.fillMaxWidth().padding(top=4.dp))
         }
     }
 }
@@ -814,8 +1027,11 @@ private fun Metric(title: String, number: String, caption: String) {
 private fun SettingsView(initialName: String, initialFooter: String, initialMac: String,
                          initialBaristaMac: String, initialKitchenMac: String,
                          initialWidth: Int, initialCut: Boolean, initialAutoBoth: Boolean,
+                         accessMode:String,branchLinked:Boolean,pendingEvents:Int,saleCount:Int,
                          onSave: (String, String, String, String, String, Int, Boolean, Boolean) -> Unit,
-                         onRequestPermission: () -> Unit, onExport: () -> Unit) {
+                         onRequestPermission: () -> Unit, onExport: () -> Unit,
+                         onManageAccess:()->Unit,onCloud:()->Unit,onSync:()->Unit,
+                         onTestPrinter:(String,String)->Unit) {
     val context = LocalContext.current
     var shop by remember(initialName) { mutableStateOf(initialName) }
     var footer by remember(initialFooter) { mutableStateOf(initialFooter) }
@@ -829,7 +1045,41 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
     val permitted = ThermalPrinter.permissionGranted(context)
     val paired = remember(deviceRefresh, permitted) { ThermalPrinter.paired(context) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        SectionTitle("Shop settings", "Personalize your café and route multiple ESC/POS printers")
+        SectionTitle("Shop settings", "Café operations, accounts, sync, and printers")
+        Surface(color=Color.White,shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(9.dp)){
+                Text("ACCOUNT & SUBSCRIPTION",color=Leaf,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                Text(if(accessMode=="cloud")"☁  Cloud POS account"else"🔑  Offline device license",
+                    fontWeight=FontWeight.Black,fontSize=20.sp,color=Coffee)
+                Text(if(branchLinked)"Branch device registered"else"Cloud branch not linked",
+                    color=Cocoa,fontSize=12.sp)
+                Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){
+                    OutlinedButton(onClick=onManageAccess,modifier=Modifier.weight(1f)){
+                        Text("Change access mode",fontSize=12.sp)
+                    }
+                    OutlinedButton(onClick=onCloud,modifier=Modifier.weight(1f)){
+                        Text("Cloud account",fontSize=12.sp)
+                    }
+                }
+                HorizontalDivider(color=Pale)
+                Text("SYNC & LOCAL DATA",color=Leaf,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                Row(horizontalArrangement=Arrangement.SpaceBetween,modifier=Modifier.fillMaxWidth()){
+                    Text("Pending sync events",fontSize=13.sp,color=Cocoa)
+                    Text(pendingEvents.toString(),fontWeight=FontWeight.Bold,color=Coffee)
+                }
+                Row(horizontalArrangement=Arrangement.SpaceBetween,modifier=Modifier.fillMaxWidth()){
+                    Text("Local receipts",fontSize=13.sp,color=Cocoa)
+                    Text(saleCount.toString(),fontWeight=FontWeight.Bold,color=Coffee)
+                }
+                Button(enabled=branchLinked&&BrewCloud.signedIn(context),
+                    onClick=onSync,modifier=Modifier.fillMaxWidth()){
+                    Text("Sync now & refresh menu")
+                }
+                Text("Offline records stay on this tablet until individually acknowledged by BrewPOS Cloud.",
+                    color=Cocoa,fontSize=11.sp)
+            }
+        }
+        Spacer(Modifier.height(14.dp))
         Surface(color = Color.White, shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("STORE PROFILE", color = Leaf, fontWeight = FontWeight.Bold, fontSize = 12.sp)
@@ -844,6 +1094,18 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
                     PrinterChoice("Barista slip printer (blank = receipt printer)", barista, paired, optional = true) { barista = it }
                     PrinterChoice("Kitchen printer (optional)", kitchen, paired, optional = true) { kitchen = it }
                     TextButton(onClick = { deviceRefresh++ }) { Text("Refresh paired devices") }
+                    OutlinedButton(onClick={onTestPrinter(mac,"Customer receipt")},
+                        modifier=Modifier.fillMaxWidth(),enabled=mac.isNotBlank()){
+                        Text("🧾  Test customer receipt printer")
+                    }
+                    OutlinedButton(onClick={onTestPrinter(barista.ifBlank{mac},"Barista")},
+                        modifier=Modifier.fillMaxWidth(),enabled=(barista.ifBlank{mac}).isNotBlank()){
+                        Text("☕  Test barista printer")
+                    }
+                    OutlinedButton(onClick={onTestPrinter(kitchen,"Kitchen")},
+                        modifier=Modifier.fillMaxWidth(),enabled=kitchen.isNotBlank()){
+                        Text("🍳  Test kitchen printer")
+                    }
                 }
                 Text("Receipt width", fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -868,9 +1130,9 @@ private fun SettingsView(initialName: String, initialFooter: String, initialMac:
         OutlinedButton(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Export sales summary (CSV)") }
         Text("CSV amounts are in centavos. Keep exports in a safe location; CSV is not a full database backup.", color = Cocoa, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
-        Text("BrewPOS Android • Multi-printer routing + Kiosk Orders queue • Android 8.0+", color = Cocoa, fontSize = 12.sp)
+        Text("BrewPOS Android • Account mode + Multi-printer + Kiosk queue • Android 8.0+", color = Cocoa, fontSize = 12.sp)
         Text("Payments named GCash, Maya, and Card are manually recorded. This app does not capture payments through any gateway.", color = Cocoa, fontSize = 12.sp)
-        Text("Local data is not yet backed up or synchronized across devices. Do not clear app storage without exporting your records.", color = Color(0xFFAE4C37), fontSize = 12.sp)
+        Text("Exporting CSV is not a full backup. Do not clear app data or reinstall before backing up local receipts and queued sync events.", color = Color(0xFFAE4C37), fontSize = 12.sp)
     }
 }
 
