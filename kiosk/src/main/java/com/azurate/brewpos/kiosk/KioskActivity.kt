@@ -55,11 +55,11 @@ private fun quotedTotal(lines:List<KioskLine>):Long = lines.sumOf { lineUnit(it)
 class KioskActivity:ComponentActivity() {
     override fun onCreate(savedInstanceState:Bundle?) {
         super.onCreate(savedInstanceState)
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = 0x00000400 or 0x00000200 or 0x00001000
+        // Let Compose respect Android status/navigation insets; previous legacy
+        // LAYOUT_FULLSCREEN flags caused the BrewPOS header to be clipped.
         setContent {
             MaterialTheme(colorScheme=KioskColors) {
-                Surface(Modifier.fillMaxSize(),color=Canvas) {
+                Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),color=Canvas) {
                     if(KioskCloud.paired(applicationContext)) CustomerKiosk()
                     else PairingScreen(onPaired={ recreate() })
                 }
@@ -225,6 +225,15 @@ private fun CustomerKiosk(){
         }
     }
     LaunchedEffect(Unit){load()}
+    // Automatically pick up newly saved cloud menu items while the kiosk is idle.
+    LaunchedEffect(step) {
+        if(step=="welcome"){
+            while(true){
+                delay(20000)
+                if(!loading)load()
+            }
+        }
+    }
     LaunchedEffect(order?.id) {
         while(order!=null && order?.status !in listOf("paid","cancelled")) {
             delay(4000)
@@ -273,11 +282,21 @@ private fun CustomerKiosk(){
                     }
                 }
                 if(error.isNotBlank())Text(error,color=Color(0xFFB23E2B))
-                Button(enabled=!loading&&menu.isNotEmpty(),onClick={step="menu"},
+                val available=menu.any { !it.tracked || (it.stock.toBigDecimalOrNull()?.signum()?:0)>0 }
+                if(!loading && menu.isEmpty() && error.isBlank())
+                    Surface(color=Color.White,shape=RoundedCornerShape(14.dp),
+                        modifier=Modifier.fillMaxWidth()){
+                        Text("Our café menu is being prepared. Please ask a staff member for help or tap Refresh menu.",
+                            color=Moss,fontSize=13.sp,lineHeight=20.sp,modifier=Modifier.padding(15.dp))
+                    }
+                else if(!loading && menu.isNotEmpty() && !available)
+                    Text("All menu items are currently unavailable. Please ask the cashier.",
+                        color=Bean,fontSize=12.sp)
+                Button(enabled=!loading&&available,onClick={step="menu"},
                     modifier=Modifier.fillMaxWidth().height(59.dp),
                     shape=RoundedCornerShape(17.dp),
                     colors=ButtonDefaults.buttonColors(containerColor=Caramel)){
-                    Text(if(loading)"Connecting to café…"else"Start ordering  →",
+                    Text(if(loading)"Connecting to café…"else if(menu.isEmpty())"Menu unavailable"else"Start ordering  →",
                         fontWeight=FontWeight.Bold,fontSize=17.sp)
                 }
                 if(menu.isEmpty())OutlinedButton(onClick={load()},enabled=!loading,
