@@ -172,7 +172,12 @@ Deno.serve(async(req)=>{
       const catalog=await api("rpc/brew_catalog",{method:"POST",body:JSON.stringify({
         p_organization_id:kiosk.organization_id,p_branch_id:kiosk.branch_id
       })});
-      return reply(200,{products:catalog.filter((x:any)=>x.active)});
+      return reply(200,{
+        products:catalog.filter((x:any)=>x.active),
+        // QR Ph remains off unless server-side TEST merchant credentials are configured.
+        qrph_test_enabled:Boolean(paymongoTestKey&&paymongoTestPublic&&
+          kiosk.organization_id===allowedTestOrg)
+      });
     }
     if(data.action==="order"){
       if(!uuid(data.submission_id)||!["Dine-in","Takeout"].includes(data.service)
