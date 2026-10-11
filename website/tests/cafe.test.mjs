@@ -16,7 +16,8 @@ test("café owner portal is separate from Azurate owner console",()=>{
 });
 test("Café frontend does not ship privileged keys or persist login secrets",()=>{
  const js=page("cafe.v1.js");
- assert.match(js,/auth\/v1\/verify/);
+ assert.match(js,/auth\("verify"/);
+ assert.match(js,/auth\("otp"/);
  assert.match(js,/brewpos-cafe/);
  assert.match(js,/catalog_create/);
  assert.match(js,/catalog_update/);
