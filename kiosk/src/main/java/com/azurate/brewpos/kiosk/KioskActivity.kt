@@ -208,7 +208,9 @@ private fun CustomerKiosk(){
     var menu by remember { mutableStateOf<List<KioskProduct>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
-    var step by remember { mutableStateOf("welcome") }
+    var step by remember { mutableStateOf("browse") }
+    var paymentChoice by remember { mutableStateOf("cashier") }
+    var qrPhTestEnabled by remember { mutableStateOf(false) }
     var service by remember { mutableStateOf("Dine-in") }
     var category by remember { mutableStateOf("All") }
     var selected by remember { mutableStateOf<KioskProduct?>(null) }
@@ -220,14 +222,14 @@ private fun CustomerKiosk(){
         loading=true
         scope.launch {
             runCatching { KioskCloud.catalog(ctx) }
-                .onSuccess { menu=it;error="";loading=false }
+                .onSuccess { menu=it;qrPhTestEnabled=KioskCloud.qrPhTestEnabled;error="";loading=false }
                 .onFailure { error="Connection needed to load the café menu: ${it.message}";loading=false }
         }
     }
     LaunchedEffect(Unit){load()}
     // Automatically pick up newly saved cloud menu items while the kiosk is idle.
     LaunchedEffect(step) {
-        if(step=="welcome"){
+        if(step=="browse"){
             while(true){
                 delay(20000)
                 if(!loading)load()
@@ -250,105 +252,18 @@ private fun CustomerKiosk(){
             Text("SELF ORDER  •  ANDROID",color=Moss,fontSize=11.sp)
         }
         when(step){
-            "welcome" -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
-                Surface(color=Moss,shape=RoundedCornerShape(26.dp)){
-                    Row(Modifier.fillMaxWidth().padding(24.dp),verticalAlignment=Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("FRESHLY PREPARED",fontSize=10.sp,color=Color(0xFFCEE0D1),
-                                fontWeight=FontWeight.Bold,letterSpacing=1.sp)
-                            Spacer(Modifier.height(9.dp))
-                            Text("What would you\nlike to order?",fontSize=30.sp,
-                                lineHeight=36.sp,fontWeight=FontWeight.Black,color=Color.White)
-                            Text("Good coffee. Brighter days.",fontSize=12.sp,color=Color(0xFFDBE3D9))
-                        }
-                        Text("☕",fontSize=66.sp)
-                    }
-                }
-                Text("Choose your order type",fontSize=19.sp,fontWeight=FontWeight.Bold,color=Dark)
-                Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                    listOf("Dine-in" to "🍽","Takeout" to "🛍").forEach{(label,emoji)->
-                        Surface(Modifier.weight(1f).clickable{service=label},
-                            shape=RoundedCornerShape(17.dp),
-                            color=if(service==label)Soft else Color.White,
-                            border=androidx.compose.foundation.BorderStroke(if(service==label)2.dp else 1.dp,
-                                if(service==label)Moss else Soft)){
-                            Column(Modifier.fillMaxWidth().padding(17.dp),
-                                horizontalAlignment=Alignment.CenterHorizontally){
-                                Text(emoji,fontSize=26.sp)
-                                Text(label,fontWeight=FontWeight.Bold,color=Dark)
-                            }
-                        }
-                    }
-                }
-                if(error.isNotBlank())Text(error,color=Color(0xFFB23E2B))
-                val available=menu.any { !it.tracked || (it.stock.toBigDecimalOrNull()?.signum()?:0)>0 }
-                if(!loading && menu.isEmpty() && error.isBlank())
-                    Surface(color=Color.White,shape=RoundedCornerShape(14.dp),
-                        modifier=Modifier.fillMaxWidth()){
-                        Text("Our café menu is being prepared. Please ask a staff member for help or tap Refresh menu.",
-                            color=Moss,fontSize=13.sp,lineHeight=20.sp,modifier=Modifier.padding(15.dp))
-                    }
-                else if(!loading && menu.isNotEmpty() && !available)
-                    Text("All menu items are currently unavailable. Please ask the cashier.",
-                        color=Bean,fontSize=12.sp)
-                Button(enabled=!loading&&available,onClick={step="menu"},
-                    modifier=Modifier.fillMaxWidth().height(59.dp),
-                    shape=RoundedCornerShape(17.dp),
-                    colors=ButtonDefaults.buttonColors(containerColor=Caramel)){
-                    Text(if(loading)"Connecting to café…"else if(menu.isEmpty())"Menu unavailable"else"Start ordering  →",
-                        fontWeight=FontWeight.Bold,fontSize=17.sp)
-                }
-                if(menu.isEmpty())OutlinedButton(onClick={load()},enabled=!loading,
-                    modifier=Modifier.fillMaxWidth()){Text("Refresh menu")}
-                Text("Browse the menu, customize your drink and choose how to pay.",
-                    color=Bean,fontSize=12.sp,textAlign=TextAlign.Center,modifier=Modifier.fillMaxWidth())
-            }
-            "menu" -> Column(Modifier.fillMaxSize().padding(horizontal=16.dp,vertical=9.dp)) {
-                Row(verticalAlignment=Alignment.CenterVertically){
-                    Column(Modifier.weight(1f)){
-                        Text("Explore the menu",fontSize=26.sp,color=Dark,fontWeight=FontWeight.Black)
-                        Text("Made for your next coffee break",color=Bean,fontSize=11.sp)
-                    }
-                    TextButton(onClick={step="welcome"}){Text("← Back")}
-                }
-                val categories=listOf("All")+menu.map{it.category}.distinct().sorted()
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical=10.dp),
-                    horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                    categories.forEach{cat->
-                        FilterChip(selected=category==cat,onClick={category=cat},
-                            label={Text(cat,fontSize=12.sp)},shape=RoundedCornerShape(20.dp),
-                            colors=FilterChipDefaults.filterChipColors(
-                                selectedContainerColor=Moss,selectedLabelColor=Color.White))
-                    }
-                }
-                LazyVerticalGrid(columns=GridCells.Adaptive(158.dp),modifier=Modifier.weight(1f),
-                    horizontalArrangement=Arrangement.spacedBy(12.dp),
-                    verticalArrangement=Arrangement.spacedBy(12.dp),
-                    contentPadding=PaddingValues(bottom=18.dp)){
-                    items(menu.filter{category=="All"||it.category==category},key={it.id}){product->
-                        val canOrder=!product.tracked||product.stock.toBigDecimalOrNull()?.signum()==1
-                        PremiumProductCard(product,canOrder,onClick={selected=product})
-                    }
-                }
-                Surface(color=Color.White,shape=RoundedCornerShape(19.dp),shadowElevation=3.dp){
-                    Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){
-                        Column(Modifier.weight(1f)){
-                            Text("Your order · "+cart.sumOf{it.quantity}+" items",
-                                color=Dark,fontWeight=FontWeight.Bold,fontSize=13.sp)
-                            Text(money(quotedTotal(cart)),color=Caramel,fontSize=24.sp,
-                                fontWeight=FontWeight.Black)
-                        }
-                        Button(onClick={step="cart"},enabled=cart.isNotEmpty(),
-                            colors=ButtonDefaults.buttonColors(containerColor=Caramel),
-                            shape=RoundedCornerShape(14.dp),
-                            modifier=Modifier.heightIn(min=54.dp)){Text("View cart →",fontWeight=FontWeight.Bold)}
-                    }
-                }
-            }
+            "browse" -> ReferenceBrowse(
+                menu=menu,loading=loading,error=error,
+                service=service,onService={service=it},
+                category=category,onCategory={category=it},
+                cart=cart.toList(),qrPhEnabled=qrPhTestEnabled,
+                onAdd={selected=it},onCart={paymentChoice="cashier";step="cart"},
+                onPayment={choice->paymentChoice=choice;step="cart"},
+                onRefresh={load()}
+            )
             "cart" -> Column(Modifier.fillMaxSize().padding(24.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically){
-                    TextButton(onClick={step="menu"}){Text("← Menu")}
+                    TextButton(onClick={step="browse"}){Text("← Menu")}
                     Spacer(Modifier.width(12.dp))
                     Text("Review your order",fontSize=26.sp,fontWeight=FontWeight.Black,color=Dark)
                 }
@@ -376,27 +291,34 @@ private fun CustomerKiosk(){
                 Text("Total: ${money(quotedTotal(cart))}",fontSize=27.sp,fontWeight=FontWeight.Black,color=Caramel)
                 Text("Final price is checked by BrewPOS Cloud before accepting the order.",color=Bean,fontSize=12.sp)
                 Spacer(Modifier.height(9.dp))
-                Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                    Button(modifier=Modifier.weight(1f).height(62.dp),enabled=!busy&&cart.isNotEmpty(),onClick={
+                Text("Payment method",fontFamily=androidx.compose.ui.text.font.FontFamily.Serif,
+                    color=Dark,fontWeight=FontWeight.Black,fontSize=19.sp)
+                Row(horizontalArrangement=Arrangement.spacedBy(9.dp)){
+                    FilterChip(selected=paymentChoice=="cashier",
+                        onClick={paymentChoice="cashier"},
+                        label={Text("▣  Pay at Cashier")})
+                    FilterChip(selected=paymentChoice=="qrph",
+                        onClick={paymentChoice="qrph"},
+                        enabled=qrPhTestEnabled,
+                        label={Text(if(qrPhTestEnabled)"▦  QR Ph TEST"else"▦  QR Ph unavailable")})
+                }
+                Button(modifier=Modifier.fillMaxWidth().heightIn(min=64.dp),
+                    enabled=!busy&&cart.isNotEmpty()&&(paymentChoice=="cashier"||qrPhTestEnabled),
+                    onClick={
                         busy=true;error=""
                         val id=submission
                         scope.launch {
-                            runCatching { KioskCloud.order(ctx,id,service,"cashier",cart.toList()) }
+                            runCatching { KioskCloud.order(ctx,id,service,paymentChoice,cart.toList()) }
                                 .onSuccess { order=it;step="confirmation" }
                                 .onFailure { error=it.message?:"Order could not be submitted" }
                             busy=false
                         }
-                    },colors=ButtonDefaults.buttonColors(containerColor=Moss),shape=RoundedCornerShape(16.dp)){Text("Pay at Cashier",fontSize=15.sp)}
-                    OutlinedButton(modifier=Modifier.weight(1f).height(62.dp),enabled=!busy&&cart.isNotEmpty(),onClick={
-                        busy=true;error=""
-                        val id=submission
-                        scope.launch {
-                            runCatching { KioskCloud.order(ctx,id,service,"qrph",cart.toList()) }
-                                .onSuccess { order=it;step="confirmation" }
-                                .onFailure { error=it.message?:"QR Ph is unavailable" }
-                            busy=false
-                        }
-                    },shape=RoundedCornerShape(16.dp)){Text("Pay via QR Ph",fontSize=15.sp)}
+                    },colors=ButtonDefaults.buttonColors(containerColor=Moss),
+                    shape=RoundedCornerShape(16.dp)){
+                    Text(if(busy)"Submitting order…"
+                        else if(paymentChoice=="cashier")"Place Order · Pay at Cashier  →"
+                        else "Place Order · QR Ph TEST  →",fontSize=15.sp,
+                        fontWeight=FontWeight.Bold)
                 }
                 if(error.isNotBlank())Text(error,color=Color.Red,modifier=Modifier.padding(top=12.dp))
             }
@@ -422,7 +344,7 @@ private fun CustomerKiosk(){
                     if(error.isNotBlank())Text(error,color=Color.Red,textAlign=TextAlign.Center)
                     OutlinedButton(onClick={
                         cart.clear();order=null;submission=UUID.randomUUID().toString()
-                        service="Dine-in";error="";step="welcome";load()
+                        service="Dine-in";paymentChoice="cashier";error="";step="browse";load()
                     }){ Text("Start another order") }
                 }
             }
