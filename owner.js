@@ -84,6 +84,7 @@ function switchTab(tab) {
     activation:["Activation generator","Generate a license","Signed activation codes bound to one Android Device ID."],
     licenses:["Issued licenses","Issuance history","Audit log of generated activations (no plaintext codes stored)."],
     approvals:["Client approvals","Approve Cloud POS clients","Authorize verified accounts without device-bound offline licenses."],
+    menu:["Menu catalog","Manage café products","Create and manage products for approved Cloud POS café branches."],
     accounts:["Client accounts","Customer onboarding","Cloud account status, optional BP1 onboarding and plan management."],
     devices:["Devices","Registered tablets","Cloud device registrations and their last reported activity."],
     sales:["Cloud sales","Synchronized transactions","Read-only sales received by BrewPOS Cloud."]
@@ -191,6 +192,100 @@ function renderCloudStatusButtons(accounts){
   });
 }
 
+
+let catalogBranches=[],catalogProducts=[];
+const catalogPair=()=>{
+ const raw=el("catalogBranch").value;
+ const [organization_id,branch_id]=raw.split("|");
+ return catalogBranches.find(b=>b.organization_id===organization_id&&b.id===branch_id)
+   ? {organization_id,branch_id} : null;
+};
+function priceCentavos(){
+ const input=el("catalogPrice").value.trim();
+ if(!/^[0-9]{1,7}(?:\.[0-9]{1,2})?$/.test(input))
+   throw Error("Enter a valid Philippine peso price, e.g. 120.00");
+ const [whole,decimal=""]=input.split(".");
+ const centavos=Number(whole)*100+Number(decimal.padEnd(2,"0"));
+ if(!Number.isSafeInteger(centavos)||centavos<1||centavos>100000000)
+   throw Error("Product price must be between ₱0.01 and ₱1,000,000");
+ return centavos;
+}
+function catalogStockInputs(){
+ const tracked=el("catalogTrackStock").checked,editing=Boolean(el("catalogProductId").value);
+ el("catalogStockWrap").hidden=!tracked||editing;
+ el("catalogActiveWrap").hidden=!editing;
+}
+function resetCatalogForm(){
+ el("catalogProductForm").reset();
+ el("catalogProductId").value="";el("catalogVersion").value="";
+ el("catalogFormTitle").textContent="Add a product";
+ el("catalogSave").textContent="＋ Save menu product";
+ catalogStockInputs();
+}
+function menuCell(tr,value){
+ const td=document.createElement("td");
+ td.textContent=String(value??"—");tr.append(td);return td;
+}
+function renderCatalog(){
+ const body=el("catalogRows");body.replaceChildren();
+ const selected=catalogPair();
+ const products=selected ? catalogProducts.filter(p=>p.organization_id===selected.organization_id
+   &&p.branch_id===selected.branch_id) : [];
+ el("catalogCount").textContent=products.length+" total products · "+products.filter(x=>x.active).length+" shown";
+ if(!selected||!products.length){
+   const tr=document.createElement("tr");
+   const td=menuCell(tr,selected?"No products yet. Add the first real menu item using the form.":"Select an approved café branch.");
+   td.colSpan=5;td.className="table-empty";body.append(tr);return;
+ }
+ for(const p of products){
+   const tr=document.createElement("tr");
+   menuCell(tr,p.name);menuCell(tr,p.category);
+   menuCell(tr,php(p.price_centavos));
+   menuCell(tr,!p.active?"Hidden":p.track_stock?
+     (Number(p.stock_quantity)>0?"Stock: "+p.stock_quantity:"Sold out"):"Made to order");
+   const actions=document.createElement("td");
+   const edit=document.createElement("button");edit.type="button";edit.className="outline";
+   edit.textContent="Edit";
+   edit.addEventListener("click",()=>{
+     el("catalogProductId").value=p.id;
+     el("catalogVersion").value=String(p.version);
+     el("catalogName").value=p.name;
+     el("catalogCategory").value=p.category;
+     el("catalogPrice").value=(Number(p.price_centavos)/100).toFixed(2);
+     el("catalogTrackStock").checked=p.track_stock===true;
+     el("catalogActive").checked=p.active===true;
+     el("catalogFormTitle").textContent="Edit product";
+     el("catalogSave").textContent="Save product changes";
+     catalogStockInputs();
+     el("catalogProductForm").scrollIntoView({behavior:"smooth",block:"start"});
+   });
+   actions.append(edit);tr.append(actions);body.append(tr);
+ }
+}
+async function loadCatalog(){
+ const previous=el("catalogBranch").value;
+ const data=await owner("catalog_list");
+ catalogBranches=data.branches||[];
+ catalogProducts=data.products||[];
+ const selector=el("catalogBranch");
+ selector.replaceChildren();
+ const placeholder=document.createElement("option");
+ placeholder.value="";placeholder.textContent="Select an approved café branch";
+ selector.append(placeholder);
+ for(const branch of catalogBranches){
+   const option=document.createElement("option");
+   option.value=branch.organization_id+"|"+branch.id;
+   option.textContent=branch.organization_name+" / "+branch.name;
+   selector.append(option);
+ }
+ if(catalogBranches.some(b=>b.organization_id+"|"+b.id===previous))selector.value=previous;
+ else if(catalogBranches.length===1)selector.value=catalogBranches[0].organization_id+"|"+catalogBranches[0].id;
+ el("catalogInfo").textContent=catalogBranches.length?
+   "Live BrewPOS Cloud · Products added here are limited to the selected approved café branch.":
+   "No approved active café branch. Approve a verified cloud account under Client Approvals first.";
+ renderCatalog();
+}
+
 async function loadTab() {
   if(busy)return;
   busy=true;
@@ -209,6 +304,8 @@ async function loadTab() {
       el("pendingCount").textContent=String((approvals.requests||[]).filter(r=>r.status==="pending").length);
     } else if(currentTab==="approvals"){
       await renderCloudApprovals();
+    } else if(currentTab==="menu"){
+      await loadCatalog();
     } else if(currentTab==="licenses") {
       const data=await owner("licenses");
       setCells("licensesRows",data.licenses||[],[
@@ -296,6 +393,49 @@ el("loginForm").addEventListener("submit",async event=>{
 });
 for(const b of document.querySelectorAll("[data-tab]"))b.addEventListener("click",()=>switchTab(b.dataset.tab));
 el("goActivation").addEventListener("click",()=>switchTab("activation"));
+el("catalogBranch").addEventListener("change",()=>{resetCatalogForm();renderCatalog()});
+el("catalogTrackStock").addEventListener("change",catalogStockInputs);
+el("catalogReset").addEventListener("click",resetCatalogForm);
+el("catalogRefresh").addEventListener("click",async()=>{
+ try{await loadCatalog();status("Café menu loaded from BrewPOS Cloud.","success");}
+ catch(e){status(e.message||"Unable to refresh café catalog","error")}
+});
+el("catalogProductForm").addEventListener("submit",async(event)=>{
+ event.preventDefault();
+ const button=el("catalogSave");
+ button.disabled=true;
+ try{
+   const tenant=catalogPair();
+   if(!tenant)throw Error("Select an approved café branch before saving.");
+   const product_id=el("catalogProductId").value;
+   const item={
+     ...tenant,
+     name:el("catalogName").value.trim(),
+     category:el("catalogCategory").value.trim(),
+     price_centavos:priceCentavos(),
+     track_stock:el("catalogTrackStock").checked,
+   };
+   if(product_id){
+     const original=catalogProducts.find(p=>p.id===product_id&&
+       p.organization_id===tenant.organization_id&&p.branch_id===tenant.branch_id);
+     if(!original)throw Error("Product is no longer in this café branch. Refresh and retry.");
+     await owner("catalog_update",{
+       ...item,product_id,
+       active:el("catalogActive").checked,
+       version:Number(el("catalogVersion").value)
+     });
+     status("Product updated. Refresh the kiosk menu to show changes.","success");
+   }else{
+     item.stock_quantity=item.track_stock?el("catalogStock").value.trim():"0";
+     await owner("catalog_create",item);
+     status("Product added to the correct café branch. Kiosk can now refresh its menu.","success");
+   }
+   await loadCatalog();
+   resetCatalogForm();
+ }catch(e){status(e.message||"Could not save product","error")}
+ finally{button.disabled=false}
+});
+
 el("refresh").addEventListener("click",()=>loadTab().catch(e=>status(e.message,"error")));
 el("signOut").addEventListener("click",()=>{clearSession();loginError("Signed out.");});
 el("issueForm").addEventListener("submit",async event=>{
