@@ -54,14 +54,23 @@ Deno.serve(async(req)=>{
   if(!data || typeof data!=="object")return answer(400,{error:"Invalid request"});
   try {
     const membership=await rows(`brew_memberships?select=organization_id,role&user_id=eq.${userId}&is_active=eq.true`);
+    // Require an approved, non-expired Cloud POS subscription for every tenant action.
+    // A staff membership alone is insufficient authorization.
+    const activeAccount=async(org:string)=>{
+      const accounts=await rows("brew_customer_accounts?select=id,plan,status,expires_at&organization_id=eq."+org+"&limit=1");
+      const acc=accounts[0];
+      if(!acc||acc.status!=="active")return null;
+      if(acc.expires_at && Date.parse(String(acc.expires_at))<=Date.now())return null;
+      return {plan:acc.plan,expires_at:acc.expires_at,status:acc.status};
+    };
     if(data.action==="request_account"){
       if(membership.length)return answer(409,{error:"This user already belongs to a registered BrewPOS business"});
       const business=String(data.business_name||"").trim();
       const device=String(data.android_device_id||"").trim().toLowerCase();
       if(business.length<2||business.length>80||/[|\u0000-\u001f\u007f]/.test(business))
         return answer(400,{error:"Business name must contain 2 to 80 printable characters"});
-      if(!/^[0-9a-f]{16}$/.test(device))
-        return answer(400,{error:"Android device ID must contain 16 lowercase hex characters"});
+      if(device && !/^[0-9a-f]{16}$/.test(device))
+        return answer(400,{error:"Optional Android device ID must contain 16 lowercase hex characters"});
       const previous=await rows("brew_signup_requests?select=status&user_id=eq."+userId);
       if(previous.length && previous[0].status==="approved")
         return answer(409,{error:"Account was already approved. Refresh your branch list"});
@@ -70,21 +79,23 @@ Deno.serve(async(req)=>{
         headers:{"prefer":"resolution=merge-duplicates,return=representation"},
         body:JSON.stringify({
           user_id:userId,email:identity.email,business_name:business,
-          android_device_id:device,status:"pending",
+          android_device_id:device||null,status:"pending",
           updated_at:new Date().toISOString()
         })
       });
       if(!write.ok)return answer(503,{error:"Could not save account request. Please retry later."});
       return answer(200,{requested:true,status:"pending",
-        message:"Email verified. Waiting for Azurate to approve a signed BP1 license and assign your cloud branch."});
+        message:"Email verified. Waiting for Azurate to approve your Cloud POS account and branch."});
     }
     if(data.action==="whoami"){
       // Only return the current user's authorized branch list.
       const authorized=[];
       for(const m of membership){
+        const entitlement=await activeAccount(String(m.organization_id));
+        if(!entitlement)continue;
         const branch=await rows(`brew_branches?select=id,name,organization_id&organization_id=eq.${m.organization_id}&is_active=eq.true`);
         const org=await rows(`brew_organizations?select=name&id=eq.${m.organization_id}`);
-        authorized.push({organization_id:m.organization_id,organization_name:org[0]?.name||"",role:m.role,branches:branch});
+        authorized.push({organization_id:m.organization_id,organization_name:org[0]?.name||"",role:m.role,branches:branch,entitlement});
       }
       const requests=await rows("brew_signup_requests?select=status,business_name,requested_at&user_id=eq."+userId);
       return answer(200,{memberships:authorized,
@@ -94,6 +105,8 @@ Deno.serve(async(req)=>{
       return answer(400,{error:"Invalid branch or device identity"});
     const member=membership.find(m=>m.organization_id===data.organization_id);
     if(!member)return answer(403,{error:"You are not an active member of this business"});
+    const entitlement=await activeAccount(String(data.organization_id));
+    if(!entitlement)return answer(403,{error:"Cloud account unapproved, suspended or expired. Contact Azurate."});
     const branch=await rows(`brew_branches?select=id&organization_id=eq.${data.organization_id}&id=eq.${data.branch_id}&is_active=eq.true`);
     if(branch.length!==1)return answer(403,{error:"Branch unavailable"});
     if(data.action==="register"){
