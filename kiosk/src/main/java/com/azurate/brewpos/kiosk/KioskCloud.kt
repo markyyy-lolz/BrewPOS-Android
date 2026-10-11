@@ -27,6 +27,8 @@ data class KioskLine(
 )
 data class KioskOrder(val id:String,val number:String,val amount:Long,val status:String,val qrImage:String?)
 object KioskCloud {
+    @Volatile var qrPhTestEnabled:Boolean=false
+        private set
     private const val BASE="https://rfxzbuocxersgbshczbj.supabase.co"
     private const val KEY="sb_publishable_CR-CJKna_rcjQi7gg1CZGQ__DnXI6Lb"
     private fun prefs(ctx:Context)=ctx.getSharedPreferences("brewpos_kiosk_secure",Context.MODE_PRIVATE)
@@ -143,6 +145,7 @@ object KioskCloud {
     suspend fun catalog(ctx:Context):List<KioskProduct> = withContext(Dispatchers.IO) {
         val (payload,t)=authenticated(ctx,"catalog")
         val response=post("/functions/v1/brewpos-kiosk",payload,kiosk=t)
+        qrPhTestEnabled=response.optBoolean("qrph_test_enabled",false)
         val rows=response.getJSONArray("products")
         val products=mutableListOf<KioskProduct>()
         for(i in 0 until rows.length()){
