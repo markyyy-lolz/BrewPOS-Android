@@ -16,7 +16,6 @@ const callbackError = fragment.get("error_description");
 if(fragment.has("access_token")||fragment.has("refresh_token")||fragment.has("error"))
   history.replaceState(null,"",location.pathname+location.search);
 
-const validDevice = id => /^[a-f0-9]{16}$/.test(id);
 function feedback(message,error=false) {
   const e=el("feedback");e.textContent=message;e.className=error?"error":"subtle";
 }
@@ -32,7 +31,7 @@ async function post(path, payload, token=null) {
     if(path.includes("/auth/v1/verify"))
       throw Error("Verification code was rejected or expired. Request a new email OTP.");
     if(path.includes("/functions/v1/brewpos-sync")){
-      if(r.status===400)throw Error("Check the business name and Android Device ID, then retry approval.");
+      if(r.status===400)throw Error("Check your business name and verified email, then retry.");
       if(r.status===401)throw Error("Verified login expired. Restart registration and request a fresh OTP.");
       if(r.status===409)throw Error("This registration is already linked or has been approved. Contact Azurate support.");
       if(r.status===503)throw Error("BrewPOS registration service is temporarily unavailable. Retry approval shortly.");
@@ -50,7 +49,7 @@ function setStage(next) {
     next==="verify"?"Verify email & create account →":
     next==="retry"?"Retry approval request →":"Registration submitted";
   el("submit").disabled=next==="complete";
-  for(const id of ["business","email","device"])el(id).readOnly=next!=="send"&&next!=="link";
+  for(const id of ["business","email"])el(id).readOnly=next!=="send"&&next!=="link";
   el("otp").required=next==="verify";
   el("resend").hidden=next!=="verify";
 }
@@ -60,10 +59,9 @@ el("signupForm").addEventListener("submit",async e=>{
   try {
     if(stage==="send"){
       const business=el("business").value.trim(),email=el("email").value.trim().toLowerCase();
-      const device=el("device").value.trim().toLowerCase();
-      if(business.length<2||business.length>80||!el("email").checkValidity()||!validDevice(device))
-        throw Error("Enter your business name, valid email, and 16-character Android Device ID.");
-      details={business,email,device};
+      if(business.length<2||business.length>80||!el("email").checkValidity())
+        throw Error("Enter your business name and a valid email address.");
+      details={business,email};
       await post(otpPath,{email,create_user:true});
       setStage("verify");
       feedback("Verification code requested. Check your email inbox and spam folder.");
@@ -73,9 +71,8 @@ el("signupForm").addEventListener("submit",async e=>{
         // before submitting a PENDING request (never a paid license).
         const business=el("business").value.trim();
         const email=el("email").value.trim().toLowerCase();
-        const device=el("device").value.trim().toLowerCase();
-        if(business.length<2||business.length>80||!el("email").checkValidity()||!validDevice(device))
-          throw Error("Enter your business, verified email and correct 16-digit device ID.");
+        if(business.length<2||business.length>80||!el("email").checkValidity())
+          throw Error("Enter a valid business name and verified email.");
         const response=await fetch(BASE+"/auth/v1/user",{
           headers:{apikey:PUBLIC_KEY,authorization:"Bearer "+access},
           cache:"no-store"
@@ -84,7 +81,7 @@ el("signupForm").addEventListener("submit",async e=>{
         const identity=await response.json();
         if(!identity.email_confirmed_at || String(identity.email).toLowerCase()!==email)
           throw Error("Enter the exact email address that received the sign-in link.");
-        details={business,email,device};
+        details={business,email};
         setStage("retry");
       }
       if(stage==="verify"){
@@ -98,11 +95,11 @@ el("signupForm").addEventListener("submit",async e=>{
       }
       if(!access)throw Error("Session expired. Start registration again.");
       const result=await post("/functions/v1/brewpos-sync",{
-        action:"request_account",business_name:details.business,android_device_id:details.device
+        action:"request_account",business_name:details.business
       },access);
       if(!result.requested)throw Error("Registration request was not confirmed.");
       setStage("complete");
-      feedback("Email verified. Registration submitted. Azurate will review your account and assign the purchased license.");
+      feedback("Email verified! Cloud POS account request submitted. Azurate will review your café and assign a Cloud POS plan. No Android Device ID is needed.");
       access=null;
     }
   }catch(err){ feedback(err?.message||"Registration failed",true); }
