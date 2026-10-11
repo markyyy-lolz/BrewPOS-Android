@@ -246,10 +246,16 @@ private fun CustomerKiosk(){
         }
     }
     Column(Modifier.fillMaxSize().background(Canvas)) {
-        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal=20.dp,vertical=13.dp),
-            horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
-            Text("☕  BREWPOS",color=Dark,fontSize=23.sp,fontWeight=FontWeight.Black)
-            Text("SELF ORDER  •  ANDROID",color=Moss,fontSize=11.sp)
+        // The browsing hero contains the BrewPOS mark. Keep a compact
+        // navigation header only for review/confirmation so the customer
+        // browsing screen matches the full-bleed reference without duplication.
+        if(step!="browse") Row(Modifier.fillMaxWidth().background(Color.White)
+            .padding(horizontal=17.dp,vertical=10.dp),
+            horizontalArrangement=Arrangement.SpaceBetween,
+            verticalAlignment=Alignment.CenterVertically){
+            Text("❧  BrewPOS",color=Dark,fontSize=22.sp,fontWeight=FontWeight.Black,
+                fontFamily=androidx.compose.ui.text.font.FontFamily.Serif)
+            Text("SELF ORDER",color=Moss,fontSize=10.sp,letterSpacing=2.sp)
         }
         when(step){
             "browse" -> ReferenceBrowse(
