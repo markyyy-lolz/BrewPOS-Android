@@ -347,7 +347,102 @@ async function setCloudAccountStatus(input:Record<string,unknown>){
   if(!Array.isArray(updated)||updated.length!==1)throw Error("Account not found");
   return {updated:true,account_id:input.account_id,status:input.status};
 }
+// Owner-only menu management for approved BrewPOS café tenants.
+// No anonymous access and no client-provided elevated role is trusted.
+function catalogText(value:unknown,label:string,max=80):string{
+  const v=String(value??"").trim();
+  if(v.length<2||v.length>max||/[\u0000-\u001F\u007F]/.test(v))
+    throw Error(label+" must contain 2–"+max+" printable characters");
+  return v;
+}
+function catalogMoney(value:unknown):number{
+  const n=Number(value);
+  if(!Number.isSafeInteger(n)||n<1||n>100000000)
+    throw Error("Price must be a valid positive amount in centavos");
+  return n;
+}
+function catalogQty(value:unknown):string{
+  const raw=String(value??"0").trim();
+  if(!/^(?:0|[1-9][0-9]{0,6})(?:\.[0-9]{1,3})?$/.test(raw))
+    throw Error("Stock quantity must be 0–9999999 with up to 3 decimals");
+  return raw;
+}
+async function tenantBranch(org:unknown,branch:unknown){
+  if(!uuid(org)||!uuid(branch))throw Error("Select a valid café and branch");
+  const accounts=await rows("brew_customer_accounts?select=id,status,expires_at&organization_id=eq."+org+"&limit=2");
+  const active=accounts.find(a=>a.status==="active"&&(!a.expires_at||Date.parse(String(a.expires_at))>Date.now()));
+  if(!active)throw Error("This café is not an active approved Cloud POS account");
+  const result=await rows("brew_branches?select=id,organization_id,is_active&organization_id=eq."+org+
+    "&id=eq."+branch+"&is_active=eq.true");
+  if(result.length!==1)throw Error("Branch does not belong to this approved café");
+  return {organization_id:org,branch_id:branch};
+}
+async function catalogList(){
+  const [accounts,orgs,branches,products]=await Promise.all([
+    rows("brew_customer_accounts?select=organization_id,status,expires_at&order=created_at.desc&limit=100"),
+    rows("brew_organizations?select=id,name&order=name.asc&limit=100"),
+    rows("brew_branches?select=id,name,organization_id,is_active&order=name.asc&limit=200"),
+    rows("brew_products?select=id,organization_id,branch_id,name,category,price_centavos,stock_quantity,track_stock,active,version,updated_at&order=updated_at.desc&limit=500")
+  ]);
+  const approved=new Set(accounts.filter(a=>a.status==="active"&&
+    (!a.expires_at||Date.parse(String(a.expires_at))>Date.now())).map(a=>String(a.organization_id)));
+  return {
+    branches:branches.filter(b=>b.is_active===true&&approved.has(String(b.organization_id)))
+      .map(b=>({...b,organization_name:orgs.find(o=>o.id===b.organization_id)?.name||"Café"})),
+    products:products.filter(p=>approved.has(String(p.organization_id)))
+  };
+}
+async function catalogCreate(input:Record<string,unknown>){
+  const tenant=await tenantBranch(input.organization_id,input.branch_id);
+  const name=catalogText(input.name,"Product name");
+  const category=catalogText(input.category,"Category",48);
+  const price=catalogMoney(input.price_centavos);
+  if(typeof input.track_stock!=="boolean")throw Error("Choose stock tracking on or off");
+  const quantity=input.track_stock?catalogQty(input.stock_quantity):"0";
+  const existing=await rows("brew_products?select=id,category,name&organization_id=eq."+tenant.organization_id+
+    "&branch_id=eq."+tenant.branch_id+"&name=eq."+encodeURIComponent(name)+"&limit=10");
+  if(existing.some(p=>String(p.name).toLowerCase()===name.toLowerCase()&&
+      String(p.category).toLowerCase()===category.toLowerCase()))
+    throw Error("A product with this name and category already exists in this branch");
+  const product=await insertOne("brew_products",{
+    ...tenant,name,category,price_centavos:price,
+    stock_quantity:quantity,track_stock:input.track_stock,active:true,version:1
+  });
+  return {created:true,product};
+}
+async function catalogUpdate(input:Record<string,unknown>){
+  if(!uuid(input.product_id))throw Error("Select an existing product");
+  const tenant=await tenantBranch(input.organization_id,input.branch_id);
+  const products=await rows("brew_products?select=id,organization_id,branch_id,version&id=eq."+
+    input.product_id+"&organization_id=eq."+tenant.organization_id+
+    "&branch_id=eq."+tenant.branch_id);
+  if(products.length!==1)throw Error("Product not found in selected branch");
+  const name=catalogText(input.name,"Product name");
+  const category=catalogText(input.category,"Category",48);
+  const price=catalogMoney(input.price_centavos);
+  if(typeof input.active!=="boolean"||typeof input.track_stock!=="boolean")
+    throw Error("Product visibility and stock options are required");
+  const version=Number(input.version);
+  if(!Number.isSafeInteger(version)||version!==Number(products[0].version))
+    throw Error("Product was modified elsewhere; refresh before editing");
+  const result=await api("brew_products?id=eq."+input.product_id+
+    "&organization_id=eq."+tenant.organization_id+
+    "&branch_id=eq."+tenant.branch_id+"&version=eq."+version,{
+      method:"PATCH",headers:{"prefer":"return=representation"},
+      body:JSON.stringify({name,category,price_centavos:price,
+        active:input.active,track_stock:input.track_stock,version:version+1,
+        updated_at:new Date().toISOString()})
+    });
+  if(!result.ok)throw Error("Cloud product update failed");
+  const saved=await result.json();
+  if(!Array.isArray(saved)||saved.length!==1)
+    throw Error("Product changed while saving. Refresh and retry");
+  return {updated:true,product:saved[0]};
+}
 async function route(action: string, input: Record<string,unknown>, userId: string) {
+  if(action==="catalog_list")return await catalogList();
+  if(action==="catalog_create")return await catalogCreate(input);
+  if(action==="catalog_update")return await catalogUpdate(input);
   if(action==="signup_requests"){
     return {requests:await rows("brew_signup_requests?select=user_id,email,business_name,android_device_id,status,requested_at&order=requested_at.desc&limit=100")};
   }

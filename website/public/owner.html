@@ -18,12 +18,13 @@
  </div><small class="art-footer">AZURATE SOFTWARE SOLUTIONS · PHILIPPINES</small></div>
  <div class="auth-form-area"><div class="auth-mobile-logo">☕ BrewPOS <span>/ Owner Console</span></div><form id="loginForm" class="auth-card">
    <div class="tag"><span class="dot"></span> AUTHORIZED OWNER ACCESS</div>
-   <h1>Welcome back.</h1><p>Sign in to approve café clients, manage Cloud POS accounts and issue secure offline activation keys.</p>
-   <label>Email address<input type="email" name="email" placeholder="owner@yourdomain.com" autocomplete="username" required></label>
-   <label>Password<input type="password" name="password" placeholder="Enter your password" autocomplete="current-password" required></label>
-   <button type="submit" class="primary full" id="loginButton">Sign in to dashboard <span aria-hidden="true">→</span></button>
+   <h1>Welcome back.</h1><p>Sign in using a one-time email code sent to your verified Azurate Owner account. License issuance requires the matching signing key on the server.</p>
+   <label>Email address<input type="email" name="email" placeholder="Azurate owner email" autocomplete="email" required></label>
+   <button type="button" class="outline full" id="sendLoginOtp">Send email OTP</button>
+   <label>One-time email code<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" minlength="6" maxlength="8" placeholder="Code from your email" required></label>
+   <button type="submit" class="primary full" id="loginButton">Verify OTP & open dashboard <span aria-hidden="true">→</span></button>
    <p id="loginError" class="error" role="alert"></p>
-   <p class="subtle">No public signup or default administrator credentials. This website does not store your password.</p>
+   <p class="subtle">First-time invited owners may verify their email here. Access is granted only when a pre-approved private invitation matches the verified email. Customer accounts never become admins automatically. No tokens are stored in browser storage.</p>
  </form><a class="back-link" href="./">← Back to BrewPOS website</a></div>
 </div>
 <div class="app-shell" id="app" hidden>
@@ -31,10 +32,11 @@
 <div class="rail-eyebrow">WORKSPACE</div>
 <nav id="navTabs" aria-label="Owner dashboard">
 <button data-tab="overview" class="active"><span>▦</span> Overview</button>
-<button data-tab="approvals"><span>✓</span> Client approvals <b id="pendingCount" class="nav-count">0</b></button>
-<button data-tab="accounts"><span>▣</span> Cloud accounts</button>
-<button data-tab="activation"><span>◈</span> Offline licenses</button>
+<button data-tab="activation"><span>◈</span> Activation generator</button>
 <button data-tab="licenses"><span>▤</span> Issued licenses</button>
+<button data-tab="approvals"><span>✓</span> Client approvals <b id="pendingCount" class="nav-count">0</b></button>
+<button data-tab="menu"><span>☕</span> Menu catalog</button>
+<button data-tab="accounts"><span>♙</span> Client accounts</button>
 <button data-tab="devices"><span>▣</span> Devices</button>
 <button data-tab="sales"><span>▥</span> Cloud sales</button>
 </nav>
@@ -50,35 +52,18 @@
 <article class="metric"><span>Issued licenses <i>◈</i></span><strong id="licenseCount">0</strong><small>Most recent 200 audit records</small></article>
 </div>
 <div class="panels">
-<div class="panel featured"><div class="overline">TWO ACCESS MODES</div>
-<h2>Cloud account or offline license.</h2>
-<p>Approve a verified café business for account login, or generate a device-bound key for offline POS. Manage both from this dashboard.</p>
-<button id="goApprovals" class="light" type="button">Review client approvals →</button>
-<div class="feature-art" aria-hidden="true">☁ <span>BP1</span></div></div>
-<div class="panel"><div class="panel-heading"><div><h2>Quick access</h2><p>Cloud and offline licensing</p></div><span class="pill">Secure</span></div>
-<button id="goAccounts" class="outline full" type="button">Manage cloud accounts →</button>
-<button id="goActivation" class="outline full" type="button">Issue offline license →</button>
-<div class="info-line"><span>Organizations</span><strong id="orgCount">0</strong></div>
-<p class="fine">Cloud approval is independent of offline BP1 keys. Staff accounts require a verified email and approved organization membership.</p></div>
+<div class="panel featured"><div class="overline">AZURATE LICENSING</div><h2>Activate the next device.</h2><p>Create secure 7-day trials, 30-day monthly licenses, or device-bound lifetime activation. All keys are signed on the server.</p><button id="goActivation" class="light" type="button">Open activation generator →</button><div class="feature-art" aria-hidden="true">☕ <span>BP1</span></div></div>
+<div class="panel"><div class="panel-heading"><div><h2>Cloud status</h2><p>Dedicated BrewPOS workspace</p></div><span class="pill">Secure</span></div><div class="info-line"><span>Online source</span><strong>Supabase BrewPOS</strong></div><div class="info-line"><span>Organizations</span><strong id="orgCount">0</strong></div><div class="info-line"><span>Sync visibility</span><strong>Cloud-synced only</strong></div><p class="fine">Offline tablet sales appear after successful sync. This is not a consolidated all-time accounting report.</p></div>
 </div></section>
-<section id="approvals" class="view" hidden>
-<div class="panel"><div class="panel-heading"><div><h2>Pending client registrations</h2><p>Review verified customer signups before granting any cloud access. Approval provisions a separate café organization and branch.</p></div><span class="pill">Owner review</span></div>
-<div class="table-scroll"><table><thead><tr><th>Business</th><th>Verified email</th><th>Device ID</th><th>Requested</th><th>Cloud plan</th><th>Actions</th></tr></thead><tbody id="approvalRows"></tbody></table></div>
-<p class="fine">Cloud Trial: 7 days, Monthly: 30 days, Lifetime: no expiry. Approval does not issue a device-bound offline BP1 license. Access can be suspended later.</p></div>
-</section>
-<section id="accounts" class="view" hidden>
-<div class="panel"><div class="panel-heading"><div><h2>Cloud customer accounts</h2><p>Verified tenants, account plans and access controls.</p></div><span class="pill">Tenant-isolated</span></div>
-<div class="table-scroll"><table><thead><tr><th>Client email</th><th>Plan</th><th>Expires</th><th>Status</th><th>Account type</th><th>Action</th></tr></thead><tbody id="accountRows"></tbody></table></div></div>
-</section>
 <section id="activation" class="view" hidden>
 <div class="columns">
-<div class="panel"><div class="panel-heading"><div><h2>Generate an offline license</h2><p>Device-bound activation — no cloud login required</p></div><span class="pill">ECDSA P-256</span></div>
+<div class="panel"><div class="panel-heading"><div><h2>Generate an activation</h2><p>Authenticated Azurate owner tools</p></div><span class="pill">ECDSA P-256</span></div>
 <form id="issueForm" class="issue-form">
 <label>Customer / business name<input id="customer" name="customer" maxlength="80" minlength="2" placeholder="Example Coffee Shop" required></label>
 <label>Android Device ID<input id="androidId" name="androidId" pattern="[a-fA-F0-9]{16}" minlength="16" maxlength="16" placeholder="16-character Android ID" autocapitalize="off" spellcheck="false" required></label>
 <label>License plan<select id="plan" name="plan" required><option value="TRIAL">Trial — 7 days</option><option value="MONTHLY">Monthly — 30 days</option><option value="LIFETIME">Lifetime — device-bound</option></select></label>
-<div class="issue-note">Offline mode uses a signed license key. Cloud mode uses an approved email account instead; no offline license needed.</div>
-<button id="issueButton" class="primary full" type="submit">◈ Generate signed offline activation</button>
+<div class="issue-note">Only the server can issue a valid code. The Android Device ID must match the code's assigned device exactly. Monthly and trial licenses retain the app's 72-hour offline grace behavior.</div>
+<button id="issueButton" class="primary full" type="submit">◈ Generate signed activation code</button>
 </form>
 </div>
 <div class="panel result-panel"><div class="panel-heading"><div><h2>Activation code</h2><p>Share it securely with your client</p></div></div>
@@ -87,6 +72,71 @@
 </div>
 </div></section>
 <section id="licenses" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Issued license history</h2><p>Last 100 owner-issued activations · Codes themselves are not stored</p></div></div><div class="table-scroll"><table><thead><tr><th>Customer</th><th>Android Device ID</th><th>Plan</th><th>Expiration</th><th>Issued</th></tr></thead><tbody id="licensesRows"></tbody></table></div></div></section>
+<section id="approvals" class="view" hidden>
+<div class="panel"><div class="panel-heading"><div><h2>Approve verified Cloud POS clients</h2><p>Review pending email-verified café requests and approve a Cloud-only trial, monthly or lifetime account. No offline BP1 key is necessary.</p></div><span class="pill">Owner review</span></div>
+<div class="table-scroll"><table><thead><tr><th>Business</th><th>Email</th><th>Android ID</th><th>Requested</th><th>Cloud plan</th><th>Decision</th></tr></thead><tbody id="approvalRows"></tbody></table></div>
+<p class="fine">Cloud approval creates an isolated organization and branch. You can suspend or reactivate a cloud account later. Offline license issuance is separate.</p>
+</div></section>
+<section id="menu" class="view" hidden>
+<div class="panel">
+<div class="panel-heading"><div><h2>Café menu catalog</h2><p>Add actual items to your approved café branch. Products automatically appear on paired self-order kiosks after Refresh Menu.</p></div><span class="pill">Live Cloud Menu</span></div>
+<label class="catalog-branch-label">Choose café branch
+<select id="catalogBranch" required><option value="">Select an approved café branch</option></select></label>
+<p class="fine" id="catalogInfo">Only active approved Cloud POS café branches are available. No sample products will be inserted.</p>
+</div>
+<div class="columns catalog-columns">
+<div class="panel">
+<div class="panel-heading"><div><h2 id="catalogFormTitle">Add a product</h2><p>Prices are in Philippine pesos. Stock tracking is optional for made-to-order drinks.</p></div></div>
+<form id="catalogProductForm" class="issue-form">
+<input type="hidden" id="catalogProductId"><input type="hidden" id="catalogVersion">
+<label>Product name<input id="catalogName" maxlength="80" minlength="2" placeholder="e.g. Iced Latte" required></label>
+<label>Category<input id="catalogCategory" maxlength="48" minlength="2" placeholder="e.g. Coffee / Milk Tea / Pastries" value="Coffee" required></label>
+<label>Price (₱)<input id="catalogPrice" type="text" inputmode="decimal" placeholder="e.g. 120.00" required></label>
+<label class="catalog-check"><input type="checkbox" id="catalogTrackStock"> Track individual stock quantity</label>
+<label id="catalogStockWrap" hidden>Opening stock quantity<input id="catalogStock" type="number" min="0" step="0.001" value="0" placeholder="0"></label>
+<label id="catalogActiveWrap" class="catalog-check" hidden><input type="checkbox" id="catalogActive" checked> Show this product on the menu</label>
+<p class="fine">If stock tracking is off, the item stays available for ordering. If it is on, opening stock must be greater than zero before the customer can order. After creation, stock changes should be recorded via an audited inventory adjustment.</p>
+<button class="primary full" id="catalogSave" type="submit">＋ Save menu product</button>
+<button class="outline full" id="catalogReset" type="button">New product / Cancel edit</button>
+</form>
+</div>
+<div class="panel">
+<div class="panel-heading"><div><h2>Products in this branch</h2><p id="catalogCount">0 items loaded</p></div><button id="catalogRefresh" class="outline" type="button">Refresh</button></div>
+<div class="table-scroll"><table><thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Availability</th><th>Action</th></tr></thead><tbody id="catalogRows"><tr><td class="table-empty" colspan="5">Select an approved café branch.</td></tr></tbody></table></div>
+<p class="fine">Changes stay scoped to the selected café branch. Hiding a product preserves its historical sales and receipts.</p>
+</div>
+</div></section>
+<section id="accounts" class="view" hidden>
+<div class="panel"><div class="panel-heading"><div><h2>Email-verified signups awaiting approval</h2><p>These customers created an account using Android email OTP. Registration alone does not grant a paid plan.</p></div></div>
+<div class="table-scroll"><table><thead><tr><th>Email</th><th>Business</th><th>Android ID</th><th>Status</th><th>Requested</th></tr></thead><tbody id="signupRows"></tbody></table></div>
+<p class="fine">Cloud-only requests can be approved directly in Client Approvals without any BP1 code. Below is the optional legacy flow for customers who also purchased offline licenses.</p>
+<label class="signup-select">Choose pending signup
+<select id="signupSelection"><option value="">Select an email-verified registration</option></select></label>
+</div>
+<div class="columns accounts-list">
+<div class="panel">
+<div class="panel-heading"><div><h2>Create client cloud account</h2><p>Optional cloud + offline accounts bound to previously issued BP1 licenses</p></div><span class="pill">Owner only</span></div>
+<form id="accountCreateForm" class="issue-form">
+<label>Client email address<input type="email" id="accountEmail" maxlength="254" placeholder="owner@coffeeshop.ph" required autocomplete="off"></label>
+<label>Issued license<select id="accountIssue" required><option value="">Select issued BP1 activation</option></select></label>
+<p class="fine">A distinct customer organization and branch will be created. The customer signs in on BrewPOS Android using a one-time email code. No customer password or activation key is stored by this website.</p>
+<button id="accountCreateButton" class="primary full" type="submit">Create client cloud account</button>
+</form>
+</div>
+<div class="panel">
+<div class="panel-heading"><div><h2>Change client license</h2><p>Pick an existing customer and a new signed activation for the same business</p></div></div>
+<form id="accountPlanForm" class="issue-form">
+<label>Existing client account<select id="accountToEdit" required><option value="">Select account</option></select></label>
+<label>Replacement signed license<select id="accountReplacementIssue" required><option value="">Select valid issued license</option></select></label>
+<p class="fine">Plan changes require a newly issued BP1 token. Existing offline activations cannot be revoked remotely. Do not share another merchant's organization.</p>
+<button id="accountUpdateButton" class="primary full" type="submit">Apply purchased license to account</button>
+</form>
+</div>
+</div>
+<div class="panel accounts-list"><div class="panel-heading"><div><h2>Registered customer accounts</h2><p>Owner-created customer logins, organization memberships and license plans</p></div></div>
+<div class="table-scroll"><table><thead><tr><th>Email</th><th>Plan</th><th>Valid until</th><th>Status</th><th>Created</th><th>Access</th></tr></thead><tbody id="accountRows"></tbody></table></div>
+</div>
+</section>
 <section id="devices" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Registered cloud devices</h2><p>Latest 100 authorized BrewPOS installations</p></div></div><div class="table-scroll"><table><thead><tr><th>Device</th><th>Installation ID</th><th>Status</th><th>Last seen</th></tr></thead><tbody id="devicesRows"></tbody></table></div><p class="fine">Android Device ID for offline licensing and cloud installation UUID are different identities. This dashboard does not imply that a signed offline license can be remotely revoked.</p></div></section>
 <section id="sales" class="view" hidden><div class="panel"><div class="panel-heading"><div><h2>Synced cloud sales</h2><p>Last 100 records only • No sample transactions</p></div></div><div class="table-scroll"><table><thead><tr><th>Receipt</th><th>Received</th><th>Payment</th><th>Amount</th><th>Status</th></tr></thead><tbody id="salesRows"></tbody></table></div></div></section>
 <footer class="footer">BrewPOS by Azurate Software Solutions · Owner access only · Actual cloud records, no simulated data</footer>
