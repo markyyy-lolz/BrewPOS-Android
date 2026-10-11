@@ -35,6 +35,7 @@
 <button data-tab="activation"><span>◈</span> Activation generator</button>
 <button data-tab="licenses"><span>▤</span> Issued licenses</button>
 <button data-tab="approvals"><span>✓</span> Client approvals <b id="pendingCount" class="nav-count">0</b></button>
+<button data-tab="menu"><span>☕</span> Menu catalog</button>
 <button data-tab="accounts"><span>♙</span> Client accounts</button>
 <button data-tab="devices"><span>▣</span> Devices</button>
 <button data-tab="sales"><span>▥</span> Cloud sales</button>
@@ -75,6 +76,35 @@
 <div class="panel"><div class="panel-heading"><div><h2>Approve verified Cloud POS clients</h2><p>Review pending email-verified café requests and approve a Cloud-only trial, monthly or lifetime account. No offline BP1 key is necessary.</p></div><span class="pill">Owner review</span></div>
 <div class="table-scroll"><table><thead><tr><th>Business</th><th>Email</th><th>Android ID</th><th>Requested</th><th>Cloud plan</th><th>Decision</th></tr></thead><tbody id="approvalRows"></tbody></table></div>
 <p class="fine">Cloud approval creates an isolated organization and branch. You can suspend or reactivate a cloud account later. Offline license issuance is separate.</p>
+</div></section>
+<section id="menu" class="view" hidden>
+<div class="panel">
+<div class="panel-heading"><div><h2>Café menu catalog</h2><p>Add actual items to your approved café branch. Products automatically appear on paired self-order kiosks after Refresh Menu.</p></div><span class="pill">Live Cloud Menu</span></div>
+<label class="catalog-branch-label">Choose café branch
+<select id="catalogBranch" required><option value="">Select an approved café branch</option></select></label>
+<p class="fine" id="catalogInfo">Only active approved Cloud POS café branches are available. No sample products will be inserted.</p>
+</div>
+<div class="columns catalog-columns">
+<div class="panel">
+<div class="panel-heading"><div><h2 id="catalogFormTitle">Add a product</h2><p>Prices are in Philippine pesos. Stock tracking is optional for made-to-order drinks.</p></div></div>
+<form id="catalogProductForm" class="issue-form">
+<input type="hidden" id="catalogProductId"><input type="hidden" id="catalogVersion">
+<label>Product name<input id="catalogName" maxlength="80" minlength="2" placeholder="e.g. Iced Latte" required></label>
+<label>Category<input id="catalogCategory" maxlength="48" minlength="2" placeholder="e.g. Coffee / Milk Tea / Pastries" value="Coffee" required></label>
+<label>Price (₱)<input id="catalogPrice" type="text" inputmode="decimal" placeholder="e.g. 120.00" required></label>
+<label class="catalog-check"><input type="checkbox" id="catalogTrackStock"> Track individual stock quantity</label>
+<label id="catalogStockWrap" hidden>Opening stock quantity<input id="catalogStock" type="number" min="0" step="0.001" value="0" placeholder="0"></label>
+<label id="catalogActiveWrap" class="catalog-check" hidden><input type="checkbox" id="catalogActive" checked> Show this product on the menu</label>
+<p class="fine">If stock tracking is off, the item stays available for ordering. If it is on, opening stock must be greater than zero before the customer can order. After creation, stock changes should be recorded via an audited inventory adjustment.</p>
+<button class="primary full" id="catalogSave" type="submit">＋ Save menu product</button>
+<button class="outline full" id="catalogReset" type="button">New product / Cancel edit</button>
+</form>
+</div>
+<div class="panel">
+<div class="panel-heading"><div><h2>Products in this branch</h2><p id="catalogCount">0 items loaded</p></div><button id="catalogRefresh" class="outline" type="button">Refresh</button></div>
+<div class="table-scroll"><table><thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Availability</th><th>Action</th></tr></thead><tbody id="catalogRows"><tr><td class="table-empty" colspan="5">Select an approved café branch.</td></tr></tbody></table></div>
+<p class="fine">Changes stay scoped to the selected café branch. Hiding a product preserves its historical sales and receipts.</p>
+</div>
 </div></section>
 <section id="accounts" class="view" hidden>
 <div class="panel"><div class="panel-heading"><div><h2>Email-verified signups awaiting approval</h2><p>These customers created an account using Android email OTP. Registration alone does not grant a paid plan.</p></div></div>
